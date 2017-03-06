@@ -90,4 +90,4 @@ ENV/
 
 # rizza-specific
 experimental/
-data/
+data/*

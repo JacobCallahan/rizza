@@ -5,6 +5,7 @@ from collections import deque
 from multiprocessing.pool import ThreadPool as Pool
 import attr
 from rizza.entity_tester import EntityTestTask
+from rizza.helpers.misc import json_serial
 # joblib (run on multiple cores)
 # pykafka (share info between parallel python processes)
 # spark (run on multiple machines)
@@ -52,10 +53,13 @@ class TaskManager(object):
     def log_tests(path=None, tests=None):
         """Run and log the tests passed in."""
         with open(path, "w") as log:
-            print ("Writing to log file: {0}".format(path))
+            print("Writing to log file: {0}".format(path))
             for test in tests:
-                json.dump(test, log)
-                log.write("~{}\n".format(test.execute()))
+                log.write("{0}~{1}~{2}\n".format(
+                    json.dumps(attr.asdict(test), default=json_serial),
+                    json.dumps(test.execute(), default=json_serial),
+                    json.dumps(attr.asdict(test), default=json_serial)
+                ))
 
     @coroutine
     def run_tasks(self, limit=None, threads=1):
@@ -66,7 +70,7 @@ class TaskManager(object):
         """
         # pool = Pool(10)
         # for result in pool.imap_unordered(execute, tasks)
-        #     print (result)
+        #     print(result)
         # try:
         #     self.tasks.popleft().execute()
         # except GeneratorExit:

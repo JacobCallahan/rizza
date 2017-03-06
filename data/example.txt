@@ -1,0 +1,10 @@
+{"arg_dict": {"create_missing": "gen_datetime"}, "entity": "Product", "field_dict": {"label": "gen_uuid"}, "method": "create_json"}
+{"arg_dict": {"create_missing": "gen_utf8"}, "entity": "Product", "field_dict": {"label": "gen_uuid"}, "method": "create_json"}
+{"arg_dict": {"create_missing": "gen_time"}, "entity": "Product", "field_dict": {"label": "gen_uuid"}, "method": "create_json"}
+{"arg_dict": {"create_missing": "gen_iplum"}, "entity": "Product", "field_dict": {"label": "gen_uuid"}, "method": "create_json"}
+{"arg_dict": {"create_missing": "gen_cyrillic"}, "entity": "Product", "field_dict": {"label": "gen_uuid"}, "method": "create_json"}
+{"arg_dict": {"create_missing": "gen_positive_integer"}, "entity": "Product", "field_dict": {"label": "gen_uuid"}, "method": "create_json"}
+{"arg_dict": {"create_missing": "gen_url"}, "entity": "Product", "field_dict": {"label": "gen_uuid"}, "method": "create_json"}
+{"arg_dict": {"create_missing": "gen_boolean"}, "entity": "Product", "field_dict": {"label": "gen_uuid"}, "method": "create_json"}
+{"arg_dict": {"create_missing": "gen_mac"}, "entity": "Product", "field_dict": {"label": "gen_uuid"}, "method": "create_json"}
+{"arg_dict": {"create_missing": "gen_email"}, "entity": "Product", "field_dict": {"label": "gen_uuid"}, "method": "create_json"}

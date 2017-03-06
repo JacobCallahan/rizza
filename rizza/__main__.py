@@ -17,7 +17,7 @@ class Main(object):
             help="The action to perform.")
         args = parser.parse_args(sys.argv[1:2])
         if not hasattr(self, args.action):
-            print ('Action {0} is not supported.'.format(args.action))
+            print('Action {0} is not supported.'.format(args.action))
             parser.print_help()
             exit(1)
         getattr(self, args.action)()
@@ -72,8 +72,8 @@ class Main(object):
             tests = TaskManager.import_tasks(args.import_path)
             if args.log_path.lower() == 'stdout':
                 for test in tests:
-                    print ("Running test task {0}".format(test))
-                    print (test.execute())
+                    print("Running test task {0}".format(test))
+                    print(test.execute())
             else:
                 TaskManager.log_tests(args.log_path, tests=tests)
         else:
@@ -92,8 +92,8 @@ class Main(object):
                         path=args.output_path, tasks=tests)
                 elif args.log_path.lower() == 'stdout':
                     for test in tests:
-                        print ("Running test task {0}".format(test))
-                        print (test.execute())
+                        print("Running test task {0}".format(test))
+                        print(test.execute())
                 else:
                     TaskManager.log_tests(args.log_path, tests=tests)
 
@@ -123,7 +123,7 @@ class Main(object):
         if args.project == 'nailgun':
             server_conf = ServerConfig(url='')
             if args.show:
-                print (server_conf.get())
+                print(server_conf.get())
 
             if args.clear:
                 server_conf.save(label=args.label, path=cfg_path)
@@ -132,7 +132,7 @@ class Main(object):
                 server_conf = server_conf.get(label=args.label, path=cfg_path)
             except Exception:
                 if not args.user or not args.password or not args.target:
-                    print ("Unable to find saved nailgun configuration. "
+                    print("Unable to find saved nailgun configuration. "
                            "Please specify a user, password, and target.")
                     return 1
 
@@ -144,13 +144,13 @@ class Main(object):
                 elif args.password and server_conf.auth:
                     server_conf.auth = (server_conf.auth[0], args.password)
                 else:
-                    print ('Couldn`t set the auth. Pass a user and password')
+                    print('Couldn`t set the auth. Pass a user and password')
 
             if args.target:
                 server_conf.url = args.target
             server_conf.verify = args.verify
             server_conf.save(label=args.label, path=cfg_path)
-            print ("Server config saved.")
+            print("Server config saved.")
 
 
 if __name__ == '__main__':

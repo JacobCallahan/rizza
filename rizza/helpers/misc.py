@@ -1,6 +1,9 @@
 # -*- encoding: utf-8 -*-
 """A module that provides miscellaneous helper functions."""
 from itertools import combinations, product
+from json import loads
+from requests import HTTPError
+from nailgun import entity_mixins
 
 
 def combination_list(base=None, max_fields=None):
@@ -44,3 +47,29 @@ def dictionary_exclusion(indict=None, exclude=None):
         for exclusion in exclude:
             indict = {x: y for x, y in indict.items() if exclusion not in x}
     return indict
+
+
+def handle_exception(exception=None):
+    """Translate an exception into a usable format."""
+    if exception.__class__.__name__ in dir(entity_mixins):
+        return {'nailgun': exception.__class__.__name__}
+    elif isinstance(exception, HTTPError):
+        return {'HTTPError': {
+            name: contents for name, contents
+            in exception.__dict__.items() if '_' not in name
+        }}
+    elif 'args' in dir(exception):
+        return {exception.__class__.__name__: exception.args}
+    else:
+        return {'unhandled': str(exception) or 'undefined'}
+
+
+def json_serial(obj=None):
+    """JSON serializer for objects not serializable by default json code."""
+    if 'datetime' in str(obj.__class__):
+        return obj.isoformat()
+    elif obj.__class__.__name__ == 'PreparedRequest':
+        return loads(obj.body)
+    elif obj.__class__.__name__ == 'Response':
+        return {'message': obj.json(), 'status': obj.status_code}
+    raise TypeError("Type {0} not serializable".format(type(obj)))

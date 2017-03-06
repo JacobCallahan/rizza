@@ -4,8 +4,8 @@ import inspect
 import attr
 from nailgun import entities
 from rizza.helpers import inputs
-from rizza.helpers.misc import (combination_list, product_list,
-                                       map_field_inputs, dictionary_exclusion)
+from rizza.helpers.misc import (combination_list, product_list, handle_exception,
+                                map_field_inputs, dictionary_exclusion)
 
 
 @attr.s()
@@ -151,14 +151,15 @@ class EntityTestTask(object):
                            for field, inpt in self.field_dict.items()}
         self.arg_dict = {arg: imeths.get(inpt, lambda: inpt)() for arg, inpt
                          in self.arg_dict.items()}
-        entity = EntityTester.pull_entities()[self.entity](**self.field_dict)
         # Todo: come up with a better way to return a logable format
         try:
-            return getattr(entity, self.method)(**self.arg_dict)
-        except TypeError as err:
-            return err
-        except Exception as err:
-            return err
+            entity = EntityTester.pull_entities()[self.entity](**self.field_dict)
+            result = getattr(entity, self.method)(**self.arg_dict)
+            if not isinstance(result, dict):
+                result = result.to_json_dict()
+            return {'pass': result}
+        except Exception as e:
+            return {'fail': handle_exception(e)}
 
 
 @attr.s(slots=True)
