@@ -13,7 +13,7 @@ class Main(object):
     def __init__(self):
         parser = argparse.ArgumentParser()
         parser.add_argument(
-            "action", type=str, choices=['brute', 'config'],
+            "action", type=str, choices=['brute', 'config', 'list'],
             help="The action to perform.")
         args = parser.parse_args(sys.argv[1:2])
         if not hasattr(self, args.action):
@@ -151,6 +151,38 @@ class Main(object):
             server_conf.verify = args.verify
             server_conf.save(label=args.label, path=cfg_path)
             print("Server config saved.")
+
+    def list(self):
+        """List out some information about our entities and inputs."""
+        self._nailgun_config_check()
+        parser = argparse.ArgumentParser()
+        parser.add_argument(
+            "subject", type=str,
+            choices=['entities', 'methods', 'fields', 'input-methods'])
+        parser.add_argument(
+            "-e", "--entity", type=str,
+            help="The name of the entity you want to filter by.")
+        parser.add_argument(
+            "-m", "--method", type=str,
+            help="The name of the method you want to filter by.")
+
+        args = parser.parse_args(sys.argv[2:])
+        if args.subject == 'entities':
+            print(", ".join(EntityTester.pull_entities().keys()))
+        elif args.subject == 'input-methods':
+            print(", ".join(EntityTester.pull_input_methods().keys()))
+        elif args.entity in EntityTester.pull_entities():
+            entity = EntityTester.pull_entities()[args.entity]
+            if args.subject == 'methods':
+                print(", ".join(EntityTester.pull_methods(entity).keys()))
+            elif args.subject == 'fields':
+                method = EntityTester.pull_methods(entity).get(args.method, None)
+                if method:
+                    print(", ".join(EntityTester.pull_args(method)))
+                else:
+                    print('I\'m not aware of the method you specified.')
+        else:
+            print('The entity you specified was not in those I am aware of.')
 
 
 if __name__ == '__main__':
