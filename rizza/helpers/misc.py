@@ -74,6 +74,7 @@ def json_serial(obj=None):
         return {'message': obj.json(), 'status': obj.status_code}
     raise TypeError("Type {0} not serializable".format(type(obj)))
 
+
 def dict_search(needle, haystack):
     if not isinstance(haystack, dict):
         if str(needle) in str(haystack):

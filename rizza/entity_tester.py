@@ -166,15 +166,15 @@ class EntityTester(object):
 class EntityTestTask(object):
     """An Entity test task object that stores relevant information.
 
-    :params entity_tuple: A tuple matching entity name to entity class.
-    :params method_tuple: A tuple matching method name to method class.
+    :params entity: A string matching an entity class.
+    :params method: A string matching an method class.
     :params fields: A dict of method fields to pass in.
     :params inputs: A dict of field inputs to pass in.
 
     """
 
-    entity = attr.ib(validator=attr.validators.instance_of(str))
-    method = attr.ib(validator=attr.validators.instance_of(str))
+    entity = attr.ib()
+    method = attr.ib()
     field_dict = attr.ib(validator=attr.validators.instance_of(dict))
     arg_dict = attr.ib(validator=attr.validators.instance_of(dict))
 

@@ -184,6 +184,8 @@ class Main(object):
         else:
             print('The entity you specified was not in those I am aware of.')
 
+    def __repr__(self):
+        return None
 
 if __name__ == '__main__':
     Main()
