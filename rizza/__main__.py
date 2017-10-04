@@ -1,7 +1,6 @@
 # -*- encoding: utf-8 -*-
 """Main module for rizza's interface."""
-import argparse
-import sys
+import argparse, pytest, sys
 from nailgun.config import ServerConfig
 from fauxfactory import gen_uuid
 from rizza.entity_tester import EntityTester
@@ -13,7 +12,7 @@ class Main(object):
     def __init__(self):
         parser = argparse.ArgumentParser()
         parser.add_argument(
-            "action", type=str, choices=['brute', 'config', 'list'],
+            "action", type=str, choices=['brute', 'config', 'list', 'test'],
             help="The action to perform.")
         args = parser.parse_args(sys.argv[1:2])
         if not hasattr(self, args.action):
@@ -183,6 +182,19 @@ class Main(object):
                     print('I\'m not aware of the method you specified.')
         else:
             print('The entity you specified was not in those I am aware of.')
+
+    def test(self):
+        """List out some information about our entities and inputs."""
+        parser = argparse.ArgumentParser()
+        parser.add_argument(
+            "--args", type=str, nargs='+',
+            help='pytest args to pass in. (--args="-r a")')
+        args = parser.parse_args(sys.argv[2:])
+        if args.args:
+            pyargs = args.args
+        else:
+            pyargs=['-q']
+        pytest.cmdline.main(args=pyargs)
 
     def __repr__(self):
         return None

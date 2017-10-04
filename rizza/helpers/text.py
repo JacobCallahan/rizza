@@ -2,7 +2,7 @@ from difflib import SequenceMatcher
 
 
 def similarity(term1, term2):
-    return SequenceMatcher(None, term1, term2).ratio()
+    return SequenceMatcher(None, term1, term2).quick_ratio()
 
 
 def fuzzyfind(needle, haystack, threshold=0.9):
@@ -18,12 +18,12 @@ def fuzzyfind(needle, haystack, threshold=0.9):
                 total += similarity(curr_needle, i)
                 if split_needle:
                     curr_needle = split_needle.pop(0)
-        return total / needle_len
+        return True if total / needle_len >= threshold else False
 
 
 def pmatch(needle, haystack, threshold=0.9):
     if needle in haystack:
-        return (1, haystack.index(needle))
+        return (True, haystack.index(needle))
     else:
         needle_len = len(needle.split())
         split_stack = haystack.split()
@@ -31,6 +31,6 @@ def pmatch(needle, haystack, threshold=0.9):
         for i in range(len(split_stack)):
             if i + needle_len <= len(split_stack):
                 presult = similarity(needle, " ".join(split_stack[i: i + needle_len]))
-                if presult >= best_match[0]:
+                if presult >= best_match[0] and presult >= threshold:
                     best_match = (presult, i)
-        return best_match
+        return (True if best_match[0] else False, best_match[1])

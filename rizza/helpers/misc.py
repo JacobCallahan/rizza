@@ -34,9 +34,9 @@ def product_list(base=None, max_fields=None):
 
 
 def map_field_inputs(fields, input_list):
-    """Map a tuple of fields to a list of input dictionaries."""
-    return [{field: inpt for field, inpt in zip(fields, input_tuple)}
-            for input_tuple in input_list]
+    """Map a tuple of fields to a list of input tuples."""
+    return [{field: inpt for field, inpt in zip(fields, input_tupe)}
+            for input_tupe in input_list]
 
 
 def dictionary_exclusion(indict=None, exclude=None):
@@ -45,7 +45,13 @@ def dictionary_exclusion(indict=None, exclude=None):
         if not isinstance(exclude, list):
             exclude = [exclude]
         for exclusion in exclude:
-            indict = {x: y for x, y in indict.items() if exclusion not in x}
+            exclusion = str(exclusion)
+            indict = {
+                x: y for x, y
+                in indict.items()
+                if exclusion not in str(x)
+                and exclusion not in str(y)
+            }
     return indict
 
 

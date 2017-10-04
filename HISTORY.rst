@@ -2,6 +2,14 @@
 History
 =======
 
+0.1.4(2017-10-04)
++++++++++++++++++
+
+* Added in basic tests
+    - run ```rizza test``` to test
+* Fixed some minor issues found while testing
+* Changed some text helpers to return a bool
+
 0.1.3(2017-10-03)
 +++++++++++++++++
 
