@@ -2,6 +2,14 @@
 History
 =======
 
+0.1.6(2017-10-06)
++++++++++++++++++
+
+* Added find method to MaiMap
+* Added helper file for configurations
+* General Optimizations in entity_tester and __main__
+* Added initial tests for entity_tester file
+
 0.1.5(2017-10-04)
 +++++++++++++++++
 

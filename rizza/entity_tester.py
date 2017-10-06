@@ -4,7 +4,7 @@ import inspect
 import attr
 from nailgun import entities
 from rizza.genetics import Population
-from rizza.helpers import inputs
+from rizza.helpers import inputs, config
 from rizza.helpers.misc import (combination_list, product_list, handle_exception,
                                 map_field_inputs, dictionary_exclusion, dict_search)
 
@@ -25,6 +25,7 @@ class EntityTester(object):
 
     def prep(self, entity=None, field_exclude=None, method_exclude=None):
         """Gather information about the current entity."""
+        config.nailgun_check()
         if isinstance(self.entity, str):
             entity = self.entity
         if entity:
@@ -33,6 +34,8 @@ class EntityTester(object):
                 self.entity = elist[entity]
             elif entity in elist.values():
                 self.entity = entity
+            else:
+                raise Exception("Entity {} not found.".format(self.entity))
 
         if self.entity:
             self.fields = self.pull_fields(self.entity, exclude=field_exclude)
@@ -203,23 +206,25 @@ class EntityTestTask(object):
 class MaIMap(object):
     """Provide a map between method fields and input functions.
 
-    :params fields: A list of tuples (field name, field).
-    :params inputs: A list of tuples (input name, input function).
+    :params fields: A dict of fields (field name, field).
+    :params inputs: A dict of tuples (input name, input function).
     :params mai_map: A pre-existing map (optional).
     """
 
-    fields = attr.ib(validator=attr.validators.instance_of(list))
-    inputs = attr.ib(validator=attr.validators.instance_of(list))
+    fields = attr.ib(validator=attr.validators.instance_of(dict))
+    inputs = attr.ib(validator=attr.validators.instance_of(dict))
     mai_map = attr.ib(default=[])
 
-    def create_map(self):
-        """Call this immediately after creating a new instance."""
-        self.mai_map = [[None for x in self.x_labels] for y in self.y_labels]
+    def __attrs_post_init__(self):
+        """Setup the instance."""
+        if not self.mai_map:
+            self.mai_map = [
+                [None for x in self.x_labels]
+                for y in self.y_labels
+            ]
 
     def point(self, x, y, value=None):
         """Map must be initialized before using this method."""
-        if not self.mai_map:
-            self.create_map()
         if value:
             self.mai_map[x][y] = value
         return {
@@ -228,12 +233,24 @@ class MaIMap(object):
             'value': self.mai_map[x][y]
         }
 
+    def find(self, needle=None):
+        """Search the map for the specified value then return
+           a list of points where that value exists.
+        """
+        results = []
+        if needle:
+            for x in range(len(self.mai_map)):
+                for y in range(len(self.mai_map[x])):
+                    if str(needle) in str(self.mai_map[x][y]):
+                        results.append((x, y))
+        return results
+
     @property
     def x_labels(self):
         """Return the labels on the x axis."""
-        return [label for label, _ in self.fields]
+        return list(self.fields.keys())
 
     @property
     def y_labels(self):
         """Return the labels on the y axis."""
-        return [label for label, _ in self.inputs]
+        return list(self.inputs.keys())
