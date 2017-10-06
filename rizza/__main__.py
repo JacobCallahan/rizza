@@ -21,22 +21,8 @@ class Main(object):
             exit(1)
         getattr(self, args.action)()
 
-    def _nailgun_config_check(self):
-        """Check if there is an auto-loadable json config."""
-        try:
-            ServerConfig(url='').get()
-            return True
-        except:
-            try:
-                ServerConfig(url='').get(
-                    path='config/server_configs.json').save()
-                return True
-            except Exception as e:
-                raise e
-
     def brute(self):
         """Run the brute force thing."""
-        self._nailgun_config_check()
         parser = argparse.ArgumentParser()
         parser.add_argument(
             "-e", "--entities", type=str, nargs='+',
@@ -120,9 +106,8 @@ class Main(object):
         cfg_path = args.path or None
 
         if args.project == 'nailgun':
-            server_conf = ServerConfig(url='')
             if args.show:
-                print(server_conf.get())
+                print(ServerConfig(url='').get())
 
             if args.clear:
                 server_conf.save(label=args.label, path=cfg_path)
@@ -153,7 +138,6 @@ class Main(object):
 
     def list(self):
         """List out some information about our entities and inputs."""
-        self._nailgun_config_check()
         parser = argparse.ArgumentParser()
         parser.add_argument(
             "subject", type=str,
