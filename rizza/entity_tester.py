@@ -181,8 +181,10 @@ class EntityTestTask(object):
     field_dict = attr.ib(validator=attr.validators.instance_of(dict))
     arg_dict = attr.ib(validator=attr.validators.instance_of(dict))
 
-    def execute(self):
+    def execute(self, mock=False):
         """Execute the task.
+
+        :params mock: A bool switch to turn off true execution.
 
         :returns: Either a valid nailgun entity or an exception object.
         """
@@ -191,6 +193,8 @@ class EntityTestTask(object):
                            for field, inpt in self.field_dict.items()}
         self.arg_dict = {arg: imeths.get(inpt, lambda: inpt)() for arg, inpt
                          in self.arg_dict.items()}
+        if mock:
+            return attr.asdict(self)
         # Todo: come up with a better way to return a logable format
         try:
             entity = EntityTester.pull_entities()[self.entity](**self.field_dict)
