@@ -14,7 +14,7 @@ from rizza.helpers.misc import json_serial
 def coroutine(func):
     """Helper generator created by David Beazley."""
     def start(*args, **kwargs):
-        """Call next on the function and returns the value."""
+        """Call next on the function and return the value."""
         g = func(*args, **kwargs)
         g.next()
         return g
@@ -50,14 +50,14 @@ class TaskManager(object):
                 outfile.write("\n")
 
     @staticmethod
-    def log_tests(path=None, tests=None):
+    def log_tests(path=None, tests=None, mock=False):
         """Run and log the tests passed in."""
         with open(path, "w") as log:
             print("Writing to log file: {0}".format(path))
             for test in tests:
                 log.write("{0}~{1}~{2}\n".format(
                     json.dumps(attr.asdict(test), default=json_serial),
-                    json.dumps(test.execute(), default=json_serial),
+                    json.dumps(test.execute(mock), default=json_serial),
                     json.dumps(attr.asdict(test), default=json_serial)
                 ))
 
