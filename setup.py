@@ -17,7 +17,7 @@ requirements = [
 
 setup(
     name='rizza',
-    version='0.1.6',
+    version='0.1.7',
     description="An increasingly intelligent method to test RH Satellite.",
     long_description=readme + '\n\n' + history,
     author="Jacob J Callahan",
