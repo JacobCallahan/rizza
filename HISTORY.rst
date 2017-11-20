@@ -2,6 +2,12 @@
 History
 =======
 
+0.1.7(2017-11-19)
++++++++++++++++++
+
+* Added initial tests for genetic algoritm classes
+* Radically optimized genetic algorithm implementation!
+
 0.1.6(2017-10-06)
 +++++++++++++++++
 
