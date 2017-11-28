@@ -12,12 +12,13 @@ with open('HISTORY.rst') as history_file:
 requirements = [
     'attrs',
     'nailgun',
+    'pyyaml',
     'pytest'
 ]
 
 setup(
     name='rizza',
-    version='0.1.7',
+    version='0.2.0',
     description="An increasingly intelligent method to test RH Satellite.",
     long_description=readme + '\n\n' + history,
     author="Jacob J Callahan",

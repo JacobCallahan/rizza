@@ -2,10 +2,17 @@
 """Tests for rizza.entity_tester."""
 import pytest
 from rizza import entity_tester
+from rizza.helpers import config
+
+
+@pytest.fixture(scope="session", autouse=True)
+def init_config():
+    """Init the class, to provide the nailgun configuration."""
+    conf = config.Config()
 
 
 def test_positive_create_entitytester():
-    """Create a new tester, then prep it."""
+    """Create a new tester."""
     e_tester = entity_tester.EntityTester('Product')
     assert e_tester.entity == 'Product'
     e_tester.prep()
@@ -15,20 +22,19 @@ def test_positive_create_entitytester():
 
 
 def test_negative_create_entitytester():
-    """Create a new tester with bad name, then try to prep it."""
+    """Attempt to create a new tester with bad name."""
     e_tester = entity_tester.EntityTester('Nothing')
     assert e_tester.entity == 'Nothing'
     with pytest.raises(Exception) as err_msg:
         e_tester.prep()
         assert err_msg == 'Entity Nothing not found.'
-        assert e_tester.entity == 'Nothing'
         assert not e_tester.fields
         assert not e_tester.methods
 
 
 def test_positive_brute_generator():
     """Create a new tester and validate the brute force
-       test generator.
+    test generator.
     """
     e_tester = entity_tester.EntityTester('Product')
     e_tester.prep()

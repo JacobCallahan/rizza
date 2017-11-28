@@ -2,6 +2,14 @@
 History
 =======
 
+0.2.0(2017-11-28)
++++++++++++++++++
+
+* Completely rewrote the config helper file
+* Added tests for the new Config class
+* Re-worked the cli and other pieces to take advantage 
+  of new config class changes.
+
 0.1.7(2017-11-19)
 +++++++++++++++++
 

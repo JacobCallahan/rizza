@@ -1,15 +1,19 @@
 # -*- encoding: utf-8 -*-
 """Main module for rizza's interface."""
-import argparse, pytest, sys
+import argparse
+import sys
+import pytest
 from nailgun.config import ServerConfig
 from fauxfactory import gen_uuid
 from rizza.entity_tester import EntityTester
+from rizza.helpers.config import Config
 from rizza.task_manager import TaskManager
 
 
 class Main(object):
-
+    """This main class will allow for better nested arguments (git stlye)"""
     def __init__(self):
+        self.conf = Config()
         parser = argparse.ArgumentParser()
         parser.add_argument(
             "action", type=str, choices=['brute', 'config', 'list', 'test'],
@@ -53,6 +57,7 @@ class Main(object):
             "(e.g. 'raw search read get payload')")
 
         args = parser.parse_args(sys.argv[2:])
+        self.conf.load_cli_args(args)
         if args.import_path:
             tests = TaskManager.import_tasks(args.import_path)
             if args.log_path.lower() == 'stdout':
@@ -84,57 +89,48 @@ class Main(object):
 
     def config(self):
         parser = argparse.ArgumentParser()
-        parser.add_argument("project", type=str, choices=['nailgun'])
-        parser.add_argument("-u", "--user", type=str,
+        subparsers = parser.add_subparsers(dest="project",
+            help="The component's config you want to change or view.")
+        nailgun_config = subparsers.add_parser('nailgun')
+        nailgun_config.add_argument("-u", "--user", type=str,
             help="Username")
-        parser.add_argument("-p", "--password", type=str,
+        nailgun_config.add_argument("-p", "--password", type=str,
             help="Password")
-        parser.add_argument("-t", "--target", type=str,
+        nailgun_config.add_argument("-t", "--target", type=str,
             help="The target Satellite's URL (https://server.domain.com)")
-        parser.add_argument("--verify", action="store_true",
+        nailgun_config.add_argument("--verify", action="store_true",
             help="Disable or enable SSL verification (default: False)")
-        parser.add_argument("--label", type=str, default='default',
+        nailgun_config.add_argument("--label", type=str, default='default',
             help="The configuration label to use.")
-        parser.add_argument("--path", type=str,
+        nailgun_config.add_argument("--path", type=str,
             help="The configuration file path to use.")
-        parser.add_argument("--clear", action="store_true",
+        nailgun_config.add_argument("--clear", action="store_true",
             help="Clear existing configuration.")
-        parser.add_argument("--show", action="store_true",
+        nailgun_config.add_argument("--show", action="store_true",
+            help="Show existing configuration.")
+
+        rizza_config = subparsers.add_parser('rizza')
+        rizza_config.add_argument("--path", type=str,
+            help="The configuration file path to use.")
+        rizza_config.add_argument("--clear", action="store_true",
+            help="Clear existing configuration.")
+        rizza_config.add_argument("--show", action="store_true",
             help="Show existing configuration.")
 
         args = parser.parse_args(sys.argv[2:])
+        self.conf.load_cli_args(args)
         cfg_path = args.path or None
 
         if args.project == 'nailgun':
             if args.show:
-                print(ServerConfig(url='').get())
-
+                self.conf.yaml_print(self.conf.NAILGUN)
             if args.clear:
-                server_conf.save(label=args.label, path=cfg_path)
-            try:
-
-                server_conf = server_conf.get(label=args.label, path=cfg_path)
-            except Exception:
-                if not args.user or not args.password or not args.target:
-                    print("Unable to find saved nailgun configuration. "
-                           "Please specify a user, password, and target.")
-                    return 1
-
-            if args.user or args.password:
-                if args.user and args.password:
-                    server_conf.auth = (args.user, args.password)
-                elif args.user and server_conf.auth:
-                    server_conf.auth = (args.user, server_conf.auth[1])
-                elif args.password and server_conf.auth:
-                    server_conf.auth = (server_conf.auth[0], args.password)
-                else:
-                    print('Couldn`t set the auth. Pass a user and password')
-
-            if args.target:
-                server_conf.url = args.target
-            server_conf.verify = args.verify
-            server_conf.save(label=args.label, path=cfg_path)
-            print("Server config saved.")
+                self.conf.clear_nailgun()
+        elif args.project == 'rizza':
+            if args.show:
+                self.conf.yaml_print(self.conf.RIZZA)
+            if args.clear:
+                self.conf.clear_rizza()
 
     def list(self):
         """List out some information about our entities and inputs."""
@@ -150,6 +146,7 @@ class Main(object):
             help="The name of the method you want to filter by.")
 
         args = parser.parse_args(sys.argv[2:])
+        self.conf.load_cli_args(args)
         if args.subject == 'entities':
             print(", ".join(EntityTester.pull_entities().keys()))
         elif args.subject == 'input-methods':
