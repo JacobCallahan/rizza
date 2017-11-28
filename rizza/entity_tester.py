@@ -25,7 +25,6 @@ class EntityTester(object):
 
     def prep(self, entity=None, field_exclude=None, method_exclude=None):
         """Gather information about the current entity."""
-        config.nailgun_check()
         if isinstance(self.entity, str):
             entity = self.entity
         if entity:

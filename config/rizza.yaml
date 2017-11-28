@@ -1,0 +1,7 @@
+NAILGUN:
+  LABEL: default
+  SATHOST: https://localhost
+  SATPASS: changeme
+  SATUSER: admin
+RIZZA:
+  CONFILE: config/rizza.yaml
