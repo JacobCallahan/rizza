@@ -3,10 +3,10 @@
 import inspect
 import attr
 from nailgun import entities
-from rizza.genetics import Population
+from rizza.helpers.genetics import Population
 from rizza.helpers import inputs, config
 from rizza.helpers.misc import (combination_list, product_list, handle_exception,
-                                map_field_inputs, dictionary_exclusion, dict_search)
+                                map_field_inputs, dictionary_exclusion)
 
 
 @attr.s()
@@ -85,43 +85,6 @@ class EntityTester(object):
                             field_dict=fi_dict,
                             arg_dict=mc_dict
                         )
-
-    def genetic_test(self, method, fields, args, inputs, rank_dict,
-                     max_iterations=100, pop_count=20):
-        """
-
-        """
-        # Create our population
-        population = Population(
-            gene_base=[fields, inputs, args, inputs],
-            population_count=pop_count
-        )
-        population.gen_population()
-
-        for _ in range(max_iterations):
-            # iterate through all the organisms
-            for organism in population.population:
-                # create an EntityTestTask from the organism
-                task = EntityTestTask(
-                    entity=self.entity.__name__,
-                    method=method,
-                    field_dict={field: inpt for (field, inpt) in
-                                zip(organism.genes[0], organism.genes[1])},
-                    arg_dict={arg: inpt for (arg, inpt) in
-                              zip(organism.genes[2], organism.genes[3])}
-                )
-                # execute the test task
-                result = task.execute()
-                # use the rank_dict to assign points to the organism
-                for search, points in rank_dict.items():
-                    if dict_search(search, result):
-                        organism.points += points
-
-            population.sort_population()
-            print(population.population[0])
-            yield population.population[0]
-            # now that every organism has been scored, let's breed a new generation
-            population.breed_population()
 
     @staticmethod
     def pull_entities(exclude=None):

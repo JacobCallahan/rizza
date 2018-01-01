@@ -1,7 +1,7 @@
 # -*- encoding: utf-8 -*-
 """Tests for rizza.genetics."""
 import pytest
-from rizza import genetics
+from rizza.helpers import genetics
 
 BASE_GENOME = [15, 22, 6, 31, 10, 5, 93, 67, 88, 59]
 NESTED_GENOME = [

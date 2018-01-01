@@ -6,6 +6,7 @@ import pytest
 from nailgun.config import ServerConfig
 from fauxfactory import gen_uuid
 from rizza.entity_tester import EntityTester
+from rizza.genetic_tester import GeneticEntityTester
 from rizza.helpers.config import Config
 from rizza.task_manager import TaskManager
 
@@ -16,7 +17,8 @@ class Main(object):
         self.conf = Config()
         parser = argparse.ArgumentParser()
         parser.add_argument(
-            "action", type=str, choices=['brute', 'config', 'list', 'test'],
+            "action", type=str, choices=[
+                'brute', 'genetic', 'config', 'list', 'test'],
             help="The action to perform.")
         args = parser.parse_args(sys.argv[1:2])
         if not hasattr(self, args.action):
@@ -87,6 +89,43 @@ class Main(object):
                 else:
                     TaskManager.log_tests(args.log_path, tests=tests)
 
+    def genetic(self):
+        """Use genetic algorithms to successfully learn how to use an
+        entity's method.
+        """
+        parser = argparse.ArgumentParser()
+        parser.add_argument(
+            "-e", "--entity", type=str, required=True,
+            help="The name of the entity you want to test (Organization).")
+        parser.add_argument(
+            "-m", "--method", type=str, required=True,
+            help="The name of the method you want to test (create).")
+        parser.add_argument(
+            "--population-count", type=int, default=None,
+            help="The number of organisms in each generation.")
+        parser.add_argument(
+            "--max-generations", type=int, default=None,
+            help="The maximum number of generations to run.")
+        parser.add_argument(
+            "--seek-bad", action="store_true",
+            help="Used to promote bad results, based on your config.")
+        parser.add_argument(
+            "--fresh", action="store_true",
+            help="Don't attempt to load in saved results.")
+
+        args = parser.parse_args(sys.argv[2:])
+        self.conf.load_cli_args(args)
+
+        GeneticEntityTester(
+            config=self.conf,
+            entity=args.entity,
+            method=args.method,
+            population_count=args.population_count,
+            max_generations=args.max_generations,
+            seek_bad=args.seek_bad,
+            fresh=args.fresh
+        ).run()
+
     def config(self):
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest="project",
@@ -137,7 +176,7 @@ class Main(object):
         parser = argparse.ArgumentParser()
         parser.add_argument(
             "subject", type=str,
-            choices=['entities', 'methods', 'fields', 'input-methods'])
+            choices=['entities', 'methods', 'fields', 'args', 'input-methods'])
         parser.add_argument(
             "-e", "--entity", type=str,
             help="The name of the entity you want to filter by.")
@@ -156,6 +195,8 @@ class Main(object):
             if args.subject == 'methods':
                 print(", ".join(EntityTester.pull_methods(entity).keys()))
             elif args.subject == 'fields':
+                print(", ".join(EntityTester.pull_fields(entity).keys()))
+            elif args.subject == 'args':
                 method = EntityTester.pull_methods(entity).get(args.method, None)
                 if method:
                     print(", ".join(EntityTester.pull_args(method)))

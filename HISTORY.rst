@@ -2,12 +2,21 @@
 History
 =======
 
+0.3.0(2017-12-31)
++++++++++++++++++
+
+* Introducing Genetic Algorithm-based testing!
+* Added genetic subcommand
+* Added genetic_tester module
+* Added initial tests for that module
+* Minor tweaks and improvements
+
 0.2.0(2017-11-28)
 +++++++++++++++++
 
 * Completely rewrote the config helper file
 * Added tests for the new Config class
-* Re-worked the cli and other pieces to take advantage 
+* Re-worked the cli and other pieces to take advantage
   of new config class changes.
 
 0.1.7(2017-11-19)
