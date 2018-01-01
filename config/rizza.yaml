@@ -1,7 +1,22 @@
 NAILGUN:
+  CONFILE: null
   LABEL: default
   SATHOST: https://localhost
   SATPASS: changeme
   SATUSER: admin
 RIZZA:
   CONFILE: config/rizza.yaml
+  GENETICS:
+    CRITERIA:
+      pass: 500
+      fail: -200
+      HTTPError: -200
+      '200': 1000
+      '404': -500
+      '422': -200
+      '500': -1000
+      created: 500
+      BadValueError: -500
+      TypeError: -200
+    MAX GENERATIONS: 1000
+    POPULATION COUNT: 100
