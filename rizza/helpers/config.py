@@ -52,6 +52,29 @@ class Config():
                 pass
         self.nailgun_config(conf=server_config)
 
+    def _load_genetics(self):
+        """Ensure the genetic algorithm vars are populated."""
+        if not self.RIZZA.get('GENETICS', None):
+            # No configuration found. Begin creating one.
+            self.RIZZA['GENETICS'] = {}
+        if not self.RIZZA['GENETICS'].get('POPULATION COUNT'):
+            self.RIZZA['GENETICS']['POPULATION COUNT'] = 100
+        if not self.RIZZA['GENETICS'].get('MAX GENERATIONS'):
+            self.RIZZA['GENETICS']['MAX GENERATIONS'] = 10000
+        if not self.RIZZA['GENETICS'].get('CRITERIA'):
+            self.RIZZA['GENETICS']['CRITERIA'] = {
+                'pass': 500,
+                'fail': -200,
+                'HTTPError': -200,
+                '200': 1000,
+                '404': -500,
+                '422': -200,
+                '500': -1000,
+                'created': 500,
+                'BadValueError': -500,
+                'TypeError': -200
+            }
+
     def load_config(self, cfg_file=None):
         """Attempt to load in config files"""
         infile = cfg_file or self.RIZZA['CONFILE']
@@ -74,32 +97,34 @@ class Config():
             self._load_nailgun()
         if 'RIZZA' in loaded_cfg:
             self.RIZZA = loaded_cfg['RIZZA']
+            self._load_genetics()
 
     def load_cli_args(self, args=None, command=False):
         """Pull in any relevant settings from argparse"""
-        if args.project == 'nailgun':
-            if args.target:
-                self.NAILGUN['SATHOST'] = args.target
-            if args.user:
-                self.NAILGUN['SATUSER'] = args.user
-            if args.password:
-                self.NAILGUN['SATPASS'] = args.password
-            if args.verify:
-                self.NAILGUN['VERIFY'] = args.verify
-            if args.label:
-                self.NAILGUN['LABEL'] = args.verify
-            if args.path:
-                self.NAILGUN['CONFILE'] = args.path
-                self._load_nailgun(path=args.path)
-            if not args.show and not args.clear:
-                self.save_config()
-                print('Set nailgun configuration.')
-        elif args.project == 'rizza':
-            if args.path:
-                self.RIZZA['CONFILE'] = args.path
-            if not args.show and not args.clear:
-                self.save_config()
-                print('Set rizza configuration.')
+        if 'project' in dir(args):
+            if args.project == 'nailgun':
+                if args.target:
+                    self.NAILGUN['SATHOST'] = args.target
+                if args.user:
+                    self.NAILGUN['SATUSER'] = args.user
+                if args.password:
+                    self.NAILGUN['SATPASS'] = args.password
+                if args.verify:
+                    self.NAILGUN['VERIFY'] = args.verify
+                if args.label:
+                    self.NAILGUN['LABEL'] = args.verify
+                if args.path:
+                    self.NAILGUN['CONFILE'] = args.path
+                    self._load_nailgun(path=args.path)
+                if not args.show and not args.clear:
+                    self.save_config()
+                    print('Set nailgun configuration.')
+            elif args.project == 'rizza':
+                if args.path:
+                    self.RIZZA['CONFILE'] = args.path
+                if not args.show and not args.clear:
+                    self.save_config()
+                    print('Set rizza configuration.')
         elif command:
             # If we are pulling in args from a command, save them for future use
             self.RIZZA['LAST'] = vars(args)

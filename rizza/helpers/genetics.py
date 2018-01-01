@@ -35,14 +35,17 @@ class Population(object):
 
         """
         new_gene_list = []
-        # If we have nested genes, then recursively breed them
-        if isinstance(gene_list1[0], list):
-            for list1, list2 in zip(gene_list1, gene_list2):
-                new_gene_list.append(self._breed_pair(list1, list2))
+        if gene_list1 and gene_list2:
+            # If we have nested genes, then recursively breed them
+            if isinstance(gene_list1[0], list):
+                for list1, list2 in zip(gene_list1, gene_list2):
+                    new_gene_list.append(self._breed_pair(list1, list2))
+            else:
+                crossover = random.randint(0, len(gene_list1))
+                new_gene_list = gene_list1[:crossover]
+                new_gene_list.extend(gene_list2[crossover:])
         else:
-            crossover = random.randint(0, len(gene_list1))
-            new_gene_list = gene_list1[:crossover]
-            new_gene_list.extend(gene_list2[crossover:])
+            new_gene_list = gene_list1
         return new_gene_list
 
     def breed_population(self, pool_percentage=50):
@@ -100,7 +103,10 @@ class Organism(object):
     def generate_genes(self, gen_func=None, count=None):
         """Randomly sort the genes to provide different combinations."""
         if gen_func and count:
-            self.genes = [gen_func() for _ in range(count)]
+            if count == 1:
+                self.genes = gen_func()
+            else:
+                self.genes = [gen_func() for _ in range(count)]
         if isinstance(self.genes[0], list):
             self.genes = self.genes[:]
             for i in range(len(self.genes)):

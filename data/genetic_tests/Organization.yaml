@@ -1,0 +1,6 @@
+Organization create positive:
+  arg_dict: {}
+  entity: Organization
+  field_dict:
+    name: gen_integer
+  method: create
