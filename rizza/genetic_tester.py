@@ -68,14 +68,13 @@ class GeneticEntityTester():
         if test_file.exists():
             tests = yaml.load(test_file.open('r')) or {}
             best = tests.get(self.test_name, False)
-            if best and best.get(self.test_name, False):
-                best = best[self.test_name]
+            if best:
                 # convert the yaml format to a gene list
-                fields = field_inputs = []
+                fields, field_inputs = ([], [])
                 for field, inpt in best['field_dict'].items():
                     fields.append(field)
                     field_inputs.append(inpt)
-                args = arg_inputs = []
+                args, arg_inputs = ([], [])
                 for arg, inpt in best['arg_dict'].items():
                     args.append(arg)
                     arg_inputs.append(inpt)
@@ -137,7 +136,7 @@ class GeneticEntityTester():
         if not self.fresh:
             best = self._load_test()
             if best:
-                population[0].genes = best
+                population.population[0].genes = best
 
         for generation in range(self.max_generations):
             for organism in population.population:
@@ -148,10 +147,10 @@ class GeneticEntityTester():
                 if 'pass' in result and not mock and not self.seek_bad:
                     self._save_test(attr.asdict(
                         self._genes_to_task(organism.genes)))
-                    print('Success! Generation {} passed with: {}'.format(
+                    print('Success! Generation {} passed with:\n{}'.format(
                         generation,
                         yaml.dump(
-                            self._genes_to_task(organism.genes),
+                            attr.asdict(self._genes_to_task(organism.genes)),
                             default_flow_style=False)
                     ))
                     return True
