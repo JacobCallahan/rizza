@@ -5,8 +5,9 @@ import attr
 from nailgun import entities
 from rizza.helpers.genetics import Population
 from rizza.helpers import inputs, config
-from rizza.helpers.misc import (combination_list, product_list, handle_exception,
-                                map_field_inputs, dictionary_exclusion)
+from rizza.helpers.misc import (combination_list, product_list,
+                                handle_exception, map_field_inputs,
+                                dictionary_exclusion, field_to_entity)
 
 
 @attr.s()
@@ -142,6 +143,7 @@ class EntityTestTask(object):
     method = attr.ib()
     field_dict = attr.ib(validator=attr.validators.instance_of(dict))
     arg_dict = attr.ib(validator=attr.validators.instance_of(dict))
+    config = attr.ib(default=None, repr=False)
 
     def execute(self, mock=False):
         """Execute the task.
@@ -150,14 +152,27 @@ class EntityTestTask(object):
 
         :returns: Either a valid nailgun entity or an exception object.
         """
-        imeths = EntityTester.pull_input_methods()
-        self.field_dict = {field: imeths.get(inpt, lambda: inpt)()
-                           for field, inpt in self.field_dict.items()}
-        self.arg_dict = {arg: imeths.get(inpt, lambda: inpt)() for arg, inpt
-                         in self.arg_dict.items()}
         if mock:
             return attr.asdict(self)
-        # Todo: come up with a better way to return a logable format
+
+        imeths = EntityTester.pull_input_methods()
+        cut_list = []
+        for field, inpt in self.field_dict.items():
+            if 'genetic' in inpt:
+                entity = field_to_entity(field)
+                if entity:
+                    self.field_dict[field] = imeths.get(
+                        inpt, lambda: inpt)(self.config, entity)
+                else:  # if the entity isn't valid, remove the field
+                    cut_list.append(field)
+            else:
+                self.field_dict[field] = imeths.get(inpt, lambda: inpt)()
+        for entry in cut_list:
+            del self.field_dict[entry]
+
+        self.arg_dict = {arg: imeths.get(inpt, lambda: inpt)() for arg, inpt
+                         in self.arg_dict.items() if not 'genetic' in inpt}
+
         try:
             entity = EntityTester.pull_entities()[self.entity](**self.field_dict)
             result = getattr(entity, self.method)(**self.arg_dict)

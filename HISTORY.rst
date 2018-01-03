@@ -2,6 +2,12 @@
 History
 =======
 
+0.3.2(2018-01-03)
++++++++++++++++++
+
++ Added ability for rizza to recursively fill dependencies
++ Added new config and cli options for this change
+
 0.3.1(2018-01-02)
 +++++++++++++++++
 
