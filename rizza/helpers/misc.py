@@ -96,3 +96,12 @@ def dict_search(needle, haystack):
             if str(needle) in str(haystack):
                 return True
     return False
+
+
+def field_to_entity(field):
+    """Takes in a field name and tries to find an entity that matches"""
+    from rizza.entity_tester import EntityTester
+    entity_list = EntityTester.pull_entities().keys()
+    field = ''.join([x.capitalize() for x in field.split('_')])
+    if field in entity_list:
+        return field

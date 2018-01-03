@@ -4,7 +4,7 @@ import random
 import yaml
 import attr
 from pathlib import Path
-from rizza.entity_tester import EntityTester, EntityTestTask
+from rizza import entity_tester
 from rizza.helpers import genetics
 from rizza.helpers.misc import dict_search
 
@@ -49,10 +49,10 @@ class GeneticEntityTester():
             self.max_generations = (
                 self.config.RIZZA['GENETICS']['MAX GENERATIONS'])
 
-        self._entity_inst = EntityTester.pull_entities()[self.entity]
-        self._method_inst = EntityTester.pull_methods(
+        self._entity_inst = entity_tester.EntityTester.pull_entities()[self.entity]
+        self._method_inst = entity_tester.EntityTester.pull_methods(
             self._entity_inst).get(self.method)
-        self._etester = EntityTester(self.entity)
+        self._etester = entity_tester.EntityTester(self.entity)
         self._etester.prep()
 
     def _save_test(self, test):
@@ -97,11 +97,12 @@ class GeneticEntityTester():
         """Turn a gene list into an Entity Test Task"""
         field_dict = {field: inpt for (field, inpt) in zip(genes[0], genes[1])}
         arg_dict = {arg: inpt for (arg, inpt) in zip(genes[2], genes[3])}
-        return EntityTestTask(
+        return entity_tester.EntityTestTask(
             entity=self.entity,
             method=self.method,
             field_dict=field_dict,
-            arg_dict=arg_dict
+            arg_dict=arg_dict,
+            config=self.config
         )
 
     def _create_gene_base(self):
@@ -112,10 +113,10 @@ class GeneticEntityTester():
             for _ in range(random.randint(0, len(list(self._etester.fields))))
         ]
         # match random inputs to the previous list of fields
-        inputs = list(EntityTester.pull_input_methods())
+        inputs = list(entity_tester.EntityTester.pull_input_methods())
         field_inputs = [random.choice(inputs) for _ in range(len(fields))]
         # create a list of random method inputs
-        args = EntityTester.pull_args(self._method_inst)
+        args = entity_tester.EntityTester.pull_args(self._method_inst)
         args = [random.choice(args) for _ in range(random.randint(0, len(args)))]
         # match random inputs to the previous list of args
         arg_inputs = [random.choice(inputs) for _ in range(len(args))]
@@ -140,7 +141,7 @@ class GeneticEntityTester():
 
         for generation in range(self.max_generations):
             for organism in population.population:
-                # create an EntityTestTask from the organism
+                # create an entity_tester. from the organism
                 task = self._genes_to_task(organism.genes)
                 # execute the test task
                 result = task.execute(mock)
@@ -150,7 +151,10 @@ class GeneticEntityTester():
                     print('Success! Generation {} passed with:\n{}'.format(
                         generation,
                         yaml.dump(
-                            attr.asdict(self._genes_to_task(organism.genes)),
+                            attr.asdict(
+                                self._genes_to_task(organism.genes),
+                                filter=lambda attr, value: attr.name != 'config'
+                            ),
                             default_flow_style=False)
                     ))
                     return True
@@ -165,4 +169,15 @@ class GeneticEntityTester():
         if not mock:
             # save the current best in the config
             self._save_test(attr.asdict(
-                self._genes_to_task(population.population[0].genes)))
+                self._genes_to_task(population.population[0].genes),
+                filter=lambda attr, value: attr.name != 'config'))
+
+    def run_best(self):
+        """Pull the best saved test, if any, run it, and return the id"""
+        test = self._load_test()
+        if test:
+            test = self._genes_to_task(test)
+            result = test.execute()
+            if 'pass' in result:
+                return result['pass'].get('id', 1)
+        return 1

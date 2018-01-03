@@ -59,7 +59,7 @@ class Main(object):
             "(e.g. 'raw search read get payload')")
 
         args = parser.parse_args(sys.argv[2:])
-        self.conf.load_cli_args(args)
+        self.conf.load_cli_args(args, command=True)
         if args.import_path:
             tests = TaskManager.import_tasks(args.import_path)
             if args.log_path.lower() == 'stdout':
@@ -98,7 +98,7 @@ class Main(object):
             "-e", "--entity", type=str, required=True,
             help="The name of the entity you want to test (Organization).")
         parser.add_argument(
-            "-m", "--method", type=str, required=True,
+            "-m", "--method", type=str, default='create',
             help="The name of the method you want to test (create).")
         parser.add_argument(
             "--population-count", type=int, default=None,
@@ -107,14 +107,20 @@ class Main(object):
             "--max-generations", type=int, default=None,
             help="The maximum number of generations to run.")
         parser.add_argument(
+            "--max-recursive-generations", type=int, default=None,
+            help="The maximum number of recursive generations to run.")
+        parser.add_argument(
             "--seek-bad", action="store_true",
             help="Used to promote bad results, based on your config.")
+        parser.add_argument(
+            "--disable-recursion", action="store_true",
+            help="Stop rizza from attempting to create required entities.")
         parser.add_argument(
             "--fresh", action="store_true",
             help="Don't attempt to load in saved results.")
 
         args = parser.parse_args(sys.argv[2:])
-        self.conf.load_cli_args(args)
+        self.conf.load_cli_args(args, command=True)
 
         GeneticEntityTester(
             config=self.conf,
