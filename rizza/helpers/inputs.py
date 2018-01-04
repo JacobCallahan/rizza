@@ -69,7 +69,7 @@ def genetic_unknown(config, entity='Organization', max_generations=None):
     config.RIZZA['GENETICS']['recursion depth'] = config.RIZZA[
         'GENETICS'].get('recursion depth', 0)
     if config.RIZZA['GENETICS']['recursion depth'] >= config.RIZZA[
-        'GENETICS']['MAX RECURSIVE GENERATIONS']:
+        'GENETICS']['MAX RECURSIVE DEPTH']:
         print('Reached max recursion depth.')
         config.RIZZA['GENETICS']['recursion depth'] -= 1
         return 1

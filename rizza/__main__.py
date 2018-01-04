@@ -110,6 +110,9 @@ class Main(object):
             "--max-recursive-generations", type=int, default=None,
             help="The maximum number of recursive generations to run.")
         parser.add_argument(
+            "--max-recursive-depth", type=int, default=None,
+            help="Limit recursive dependency resolution depth.")
+        parser.add_argument(
             "--seek-bad", action="store_true",
             help="Used to promote bad results, based on your config.")
         parser.add_argument(
@@ -128,6 +131,9 @@ class Main(object):
             method=args.method,
             population_count=args.population_count,
             max_generations=args.max_generations,
+            max_recursive_generations=args.max_recursive_generations,
+            max_recursive_depth=args.max_recursive_depth,
+            disable_recursion=args.disable_recursion,
             seek_bad=args.seek_bad,
             fresh=args.fresh
         ).run()
@@ -193,19 +199,19 @@ class Main(object):
         args = parser.parse_args(sys.argv[2:])
         self.conf.load_cli_args(args)
         if args.subject == 'entities':
-            print(", ".join(EntityTester.pull_entities().keys()))
+            print(" ".join(EntityTester.pull_entities().keys()))
         elif args.subject == 'input-methods':
-            print(", ".join(EntityTester.pull_input_methods().keys()))
+            print(" ".join(EntityTester.pull_input_methods().keys()))
         elif args.entity in EntityTester.pull_entities():
             entity = EntityTester.pull_entities()[args.entity]
             if args.subject == 'methods':
-                print(", ".join(EntityTester.pull_methods(entity).keys()))
+                print(" ".join(EntityTester.pull_methods(entity).keys()))
             elif args.subject == 'fields':
-                print(", ".join(EntityTester.pull_fields(entity).keys()))
+                print(" ".join(EntityTester.pull_fields(entity).keys()))
             elif args.subject == 'args':
                 method = EntityTester.pull_methods(entity).get(args.method, None)
                 if method:
-                    print(", ".join(EntityTester.pull_args(method)))
+                    print(" ".join(EntityTester.pull_args(method)))
                 else:
                     print('I\'m not aware of the method you specified.')
         else:

@@ -28,6 +28,9 @@ class GeneticEntityTester():
     method = attr.ib(validator=attr.validators.instance_of(str))
     population_count = attr.ib(default=None)
     max_generations = attr.ib(default=None)
+    max_recursive_generations = attr.ib(default=None)
+    max_recursive_depth = attr.ib(default=None)
+    disable_recursion = attr.ib(default=None)
     seek_bad = attr.ib(default=False)
     fresh = attr.ib(default=False)
 
@@ -48,6 +51,16 @@ class GeneticEntityTester():
         if not self.max_generations:
             self.max_generations = (
                 self.config.RIZZA['GENETICS']['MAX GENERATIONS'])
+
+        # cli overrides
+        if self.max_recursive_generations:
+            self.config.RIZZA['GENETICS'][
+                'MAX RECURSIVE GENERATIONS'] = self.max_recursive_generations
+        if self.disable_recursion:
+            self.config.RIZZA['GENETICS']['ALLOW RECURSION'] = False
+        if self.max_recursive_depth:
+            self.config.RIZZA['GENETICS'][
+                'MAX RECURSIVE DEPTH'] = self.max_recursive_depth
 
         self._entity_inst = entity_tester.EntityTester.pull_entities()[self.entity]
         meths = entity_tester.EntityTester.pull_methods(self._entity_inst)

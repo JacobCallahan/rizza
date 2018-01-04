@@ -22,6 +22,19 @@ def test_positive_create():
         'GENETICS']['POPULATION COUNT']
     assert gen_test.test_name == 'Organization create positive'
 
+def test_positive_config_overrides():
+    """Check that the post init overrides config values"""
+    gen_test = genetic_tester.GeneticEntityTester(
+        CONF, 'Organization', 'create',
+        max_recursive_generations=1337,
+        disable_recursion=True,
+        max_recursive_depth=1337
+    )
+    assert gen_test.config.RIZZA['GENETICS'][
+        'MAX RECURSIVE GENERATIONS'] == 1337
+    assert not gen_test.config.RIZZA['GENETICS']['ALLOW RECURSION']
+    assert gen_test.config.RIZZA['GENETICS']['MAX RECURSIVE DEPTH'] == 1337
+
 def test_positive_mock_run():
     """Run a mock series of genetic algorithm-based tests"""
     gen_test = genetic_tester.GeneticEntityTester(
