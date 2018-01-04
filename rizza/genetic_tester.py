@@ -50,8 +50,11 @@ class GeneticEntityTester():
                 self.config.RIZZA['GENETICS']['MAX GENERATIONS'])
 
         self._entity_inst = entity_tester.EntityTester.pull_entities()[self.entity]
-        self._method_inst = entity_tester.EntityTester.pull_methods(
-            self._entity_inst).get(self.method)
+        meths = entity_tester.EntityTester.pull_methods(self._entity_inst)
+        if meths:
+            self._method_inst = meths.get(self.method)
+        else:
+            self._method_inst = None
         self._etester = entity_tester.EntityTester(self.entity)
         self._etester.prep()
 
@@ -122,8 +125,11 @@ class GeneticEntityTester():
         arg_inputs = [random.choice(inputs) for _ in range(len(args))]
         return [fields, field_inputs, args, arg_inputs]
 
-    def run(self, mock=False):
+    def run(self, mock=False, save_only_passed=False):
         """Run a population attempting to maximize desired results"""
+        if not self._method_inst:
+            return None
+
         # Create our population
         population = genetics.Population(
             gene_base=[self._create_gene_base()],
@@ -147,7 +153,8 @@ class GeneticEntityTester():
                 result = task.execute(mock)
                 if 'pass' in result and not mock and not self.seek_bad:
                     self._save_test(attr.asdict(
-                        self._genes_to_task(organism.genes)))
+                        self._genes_to_task(organism.genes),
+                        filter=lambda attr, value: attr.name != 'config'))
                     print('Success! Generation {} passed with:\n{}'.format(
                         generation,
                         yaml.dump(
@@ -166,7 +173,7 @@ class GeneticEntityTester():
                 generation, population.population[0]))
             # breed the current generation and iterate
             population.breed_population()
-        if not mock:
+        if not mock and not save_only_passed:
             # save the current best in the config
             self._save_test(attr.asdict(
                 self._genes_to_task(population.population[0].genes),

@@ -7,16 +7,19 @@ NAILGUN:
 RIZZA:
   CONFILE: config/rizza.yaml
   GENETICS:
+    ALLOW RECURSION: true
     CRITERIA:
-      pass: 500
-      fail: -200
-      HTTPError: -200
       '200': 1000
       '404': -500
       '422': -200
       '500': -1000
-      created: 500
       BadValueError: -500
+      HTTPError: -200
       TypeError: -200
+      created: 500
+      fail: -200
+      pass: 500
     MAX GENERATIONS: 1000
+    MAX RECURSIVE DEPTH: 10
+    MAX RECURSIVE GENERATIONS: 100
     POPULATION COUNT: 100
