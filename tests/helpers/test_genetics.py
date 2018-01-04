@@ -3,7 +3,7 @@
 import pytest
 from rizza.helpers import genetics
 
-BASE_GENOME = [15, 22, 6, 31, 10, 5, 93, 67, 88, 59]
+BASE_GENOME = list(range(25))
 NESTED_GENOME = [
     [8, 11, 55, 76, 99],
     [4, 66, 74, 83, 92],
@@ -14,7 +14,7 @@ NESTED_GENOME = [
 def grade_single_list(submitted, genome=BASE_GENOME):
     result = 0
     for i in range(len(genome)):
-        result += abs(genome[i] - submitted[i]) * (10 - i)
+        result += abs(genome[i] - submitted[i]) * (25 - i)
     return result ** 3  # we exponentially favor more desired results
 
 

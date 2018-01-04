@@ -65,6 +65,8 @@ class Config():
             self.RIZZA['GENETICS']['ALLOW RECURSION'] = True
         if not self.RIZZA['GENETICS'].get('MAX RECURSIVE GENERATIONS'):
             self.RIZZA['GENETICS']['MAX RECURSIVE GENERATIONS'] = 10000
+        if not self.RIZZA['GENETICS'].get('MAX RECURSIVE DEPTH'):
+            self.RIZZA['GENETICS']['MAX RECURSIVE DEPTH'] = 10
         if not self.RIZZA['GENETICS'].get('CRITERIA'):
             self.RIZZA['GENETICS']['CRITERIA'] = {
                 'pass': 500,

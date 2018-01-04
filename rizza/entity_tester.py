@@ -100,7 +100,13 @@ class EntityTester(object):
     def pull_methods(entity=None, exclude=None):
         """Return a dictionary of methods belonging to an entity."""
         if entity:
-            methods = inspect.getmembers(entity(), predicate=inspect.ismethod)
+            try:
+                methods = inspect.getmembers(
+                    entity(), predicate=inspect.ismethod)
+            except TypeError as err:
+                # Failed nailgun's _check_for_value
+                print('Unable to init {} due to {}'.format(entity, err))
+                return None
             mdict = {name: method
                      for name, method in methods
                      if "__" not in name}
@@ -110,7 +116,13 @@ class EntityTester(object):
     def pull_fields(entity=None, exclude=None):
         """Return a dictionary of fields belonging to an entity's method."""
         if entity:
-            return dictionary_exclusion(entity()._fields, exclude)
+            try:
+                entity_inst = entity()
+            except TypeError as err:
+                # Failed nailgun's _check_for_value
+                print('Unable to init {} due to {}'.format(entity, err))
+                return None
+            return dictionary_exclusion(entity_inst._fields, exclude)
 
     @staticmethod
     def pull_args(method=None):

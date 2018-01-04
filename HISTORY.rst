@@ -2,6 +2,14 @@
 History
 =======
 
+0.3.3(2018-01-04)
++++++++++++++++++
+
++ Added MAX RECURSIVE DEPTH to limit genetic_unknown recursion
++ Updated genetic_known and genetic_unknown methods
++ Added error checking to EntityTester pull methods
++ Expanded BASE_GENOME in test_genetics to lessen false failures
+
 0.3.2(2018-01-03)
 +++++++++++++++++
 

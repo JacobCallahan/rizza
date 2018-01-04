@@ -50,8 +50,11 @@ def gen_utf8_long():
 def genetic_known(config, entity='Organization'):
     """Attempt to create a known entity and return the id"""
     from rizza.genetic_tester import GeneticEntityTester
-    print('\n\nCreating a(n) {}...'.format(entity))
-    return GeneticEntityTester(config, entity, 'create').run_best()
+    print('\n\nCreating {}...'.format(entity))
+    gtester = GeneticEntityTester(config, entity, 'create')
+    if not gtester._load_test():
+        gtester.run(save_only_passed=True)
+    return gtester.run_best()
 
 
 def genetic_unknown(config, entity='Organization', max_generations=None):
@@ -59,12 +62,23 @@ def genetic_unknown(config, entity='Organization', max_generations=None):
     from rizza.genetic_tester import GeneticEntityTester
     if not config.RIZZA['GENETICS']['ALLOW RECURSION']:
         return None
+
     if not max_generations:
         max_generations = config.RIZZA['GENETICS']['MAX RECURSIVE GENERATIONS']
-    print('\n\nAttempting to create a(n) {}...'.format(entity))
+
+    config.RIZZA['GENETICS']['recursion depth'] = config.RIZZA[
+        'GENETICS'].get('recursion depth', 0)
+    if config.RIZZA['GENETICS']['recursion depth'] >= config.RIZZA[
+        'GENETICS']['MAX RECURSIVE GENERATIONS']:
+        print('Reached max recursion depth.')
+        config.RIZZA['GENETICS']['recursion depth'] -= 1
+        return 1
+
+    print('\n\nAttempting to create {}...'.format(entity))
     gtester = GeneticEntityTester(
         config, entity, 'create', max_generations=max_generations)
     if not gtester._load_test():
-        gtester.run()
+        gtester.run(save_only_passed=True)
     print('Resuming parent task.\n\n')
+    config.RIZZA['GENETICS']['recursion depth'] -= 1
     return gtester.run_best()

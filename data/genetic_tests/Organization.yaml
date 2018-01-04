@@ -2,5 +2,10 @@ Organization create positive:
   arg_dict: {}
   entity: Organization
   field_dict:
-    name: gen_integer
+    default_content_view: gen_uuid
+    hostgroup: gen_alpha
+    id: gen_url
+    media: gen_cyrillic
+    name: gen_positive_integer
+    title: gen_url
   method: create
