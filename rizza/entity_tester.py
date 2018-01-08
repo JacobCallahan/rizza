@@ -58,7 +58,8 @@ class EntityTester(object):
         """
         entity_name = self.entity.__name__
 
-        input_list = self.pull_input_methods(exclude='long').keys()
+        input_list = self.pull_input_methods(
+            exclude=['long', 'genetic']).keys()
         if not max_inputs:
             max_inputs = len(input_list)
         input_combos = product_list(input_list, max_inputs)
