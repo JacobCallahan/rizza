@@ -181,7 +181,7 @@ class Config():
             self.NAILGUN['LABEL'] = label
         if not self.NAILGUN.get('CONFIG', None):
             server_conf = ServerConfig(url='')
-            server_conf.url = self.NAILGUN.get('SATHOST', 'https://https://localhost')
+            server_conf.url = self.NAILGUN.get('SATHOST', 'https://localhost')
             server_conf.auth = (
                 self.NAILGUN.get('SATUSER', 'admin'),
                 self.NAILGUN.get('SATPASS', 'changeme'))

@@ -2,6 +2,13 @@
 History
 =======
 
+0.3.4(2018-01-07)
++++++++++++++++++
+
++ Enhanced requests error message resolution
++ Numerous misc fixes and enhancements
++ Updated Dockerfile
+
 0.3.3(2018-01-04)
 +++++++++++++++++
 
