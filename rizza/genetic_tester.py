@@ -103,11 +103,11 @@ class GeneticEntityTester():
         """Return a numeric value for the given result"""
         if mock:  # Used for testing the class without true execution
             return random.randint(-1000,1000)
+        total = 0
         for criteria, points in self.config.RIZZA['GENETICS']['CRITERIA'].items():
             if dict_search(criteria, result):
-                return points
-        else:
-            return 0
+                total += points
+        return total
 
     def _genes_to_task(self, genes):
         """Turn a gene list into an Entity Test Task"""
@@ -197,6 +197,7 @@ class GeneticEntityTester():
         test = self._load_test()
         if test:
             test = self._genes_to_task(test)
+            print('\n\nCreating {}...'.format(self.entity))
             result = test.execute()
             if 'pass' in result:
                 return result['pass'].get('id', 1)

@@ -60,10 +60,17 @@ def handle_exception(exception=None):
     if exception.__class__.__name__ in dir(entity_mixins):
         return {'nailgun': exception.__class__.__name__}
     elif isinstance(exception, HTTPError):
-        return {'HTTPError': {
-            name: contents for name, contents
-            in exception.__dict__.items() if '_' not in name
-        }}
+        resp = {}
+        for name, contents in exception.__dict__.items():
+            if '_' not in name:
+                if 'json' in dir(contents):
+                    try:
+                        resp[name] = contents.json()
+                    except Error as err:
+                        resp[name] = contents.content
+                else:
+                    resp[name] = contents
+        return {'HTTPError': resp}
     elif 'args' in dir(exception):
         return {exception.__class__.__name__: exception.args}
     else:
@@ -90,11 +97,10 @@ def dict_search(needle, haystack):
     if needle in haystack:
         return True
     for key, value in haystack.items():
-        if isinstance(value, dict):
-            dict_search(needle, value)
-        else:
-            if str(needle) in str(haystack):
-                return True
+        if str(needle) in str(key):
+            return True
+        if dict_search(needle, value):
+            return True
     return False
 
 

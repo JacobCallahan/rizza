@@ -50,7 +50,6 @@ def gen_utf8_long():
 def genetic_known(config, entity='Organization'):
     """Attempt to create a known entity and return the id"""
     from rizza.genetic_tester import GeneticEntityTester
-    print('\n\nCreating {}...'.format(entity))
     gtester = GeneticEntityTester(config, entity, 'create')
     if not gtester._load_test():
         gtester.run(save_only_passed=True)
