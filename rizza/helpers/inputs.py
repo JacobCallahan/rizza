@@ -59,6 +59,7 @@ def genetic_known(config, entity='Organization'):
 def genetic_unknown(config, entity='Organization', max_generations=None):
     """Attempt to create an unknown entity and return the id"""
     from rizza.genetic_tester import GeneticEntityTester
+    from logzero import logger
     if not config.RIZZA['GENETICS']['ALLOW RECURSION']:
         return None
 
@@ -69,15 +70,15 @@ def genetic_unknown(config, entity='Organization', max_generations=None):
         'GENETICS'].get('recursion depth', 0)
     if config.RIZZA['GENETICS']['recursion depth'] >= config.RIZZA[
         'GENETICS']['MAX RECURSIVE DEPTH']:
-        print('Reached max recursion depth.')
+        logger.warning('Reached max recursion depth.')
         config.RIZZA['GENETICS']['recursion depth'] -= 1
         return 1
 
-    print('\n\nAttempting to create {}...'.format(entity))
+    logger.info('Attempting to create {}...'.format(entity))
     gtester = GeneticEntityTester(
         config, entity, 'create', max_generations=max_generations)
     if not gtester._load_test():
         gtester.run(save_only_passed=True)
-    print('Resuming parent task.\n\n')
+    logger.info('Resuming parent task.')
     config.RIZZA['GENETICS']['recursion depth'] -= 1
     return gtester.run_best()

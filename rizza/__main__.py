@@ -3,8 +3,9 @@
 import argparse
 import sys
 import pytest
-from nailgun.config import ServerConfig
 from fauxfactory import gen_uuid
+from logzero import logger
+from nailgun.config import ServerConfig
 from rizza.entity_tester import EntityTester
 from rizza.genetic_tester import GeneticEntityTester
 from rizza.helpers.config import Config
@@ -22,7 +23,7 @@ class Main(object):
             help="The action to perform.")
         args = parser.parse_args(sys.argv[1:2])
         if not hasattr(self, args.action):
-            print('Action {0} is not supported.'.format(args.action))
+            logger.warning('Action {0} is not supported.'.format(args.action))
             parser.print_help()
             exit(1)
         getattr(self, args.action)()
@@ -40,9 +41,9 @@ class Main(object):
             "-i", "--import-path", type=str,
             help="The file path to exported test tasks.")
         parser.add_argument(
-            "-l", "--log-path", type=str,
+            "-l", "--log-name", type=str,
             default="session{0}.log".format(gen_uuid()[:8]),
-            help="The file path to write test results to.")
+            help="The file name to write test results to.")
         parser.add_argument(
             "--max-fields", type=int,
             help="The maximum number of entity fields to use.")
@@ -57,17 +58,20 @@ class Main(object):
             "--method-exclude", type=str, nargs='+',
             help="One or more methods to exclude from brute force testing. "
             "(e.g. 'raw search read get payload')")
+        parser.add_argument(
+            "--debug", action="store_true",
+            help="Enable debug loggin level.")
 
         args = parser.parse_args(sys.argv[2:])
         self.conf.load_cli_args(args, command=True)
+        self.conf.init_logger(
+            path='logs/{}'.format(args.log_name),
+            level='debug' if args.debug else None
+        )
+
         if args.import_path:
             tests = TaskManager.import_tasks(args.import_path)
-            if args.log_path.lower() == 'stdout':
-                for test in tests:
-                    print("Running test task {0}".format(test))
-                    print(test.execute())
-            else:
-                TaskManager.log_tests(args.log_path, tests=tests)
+            TaskManager.run_tests(tests=tests)
         else:
             for entity in args.entities:
                 e_tester = EntityTester(entity)
@@ -82,12 +86,8 @@ class Main(object):
                 if args.output_path:
                     TaskManager.export_tasks(
                         path=args.output_path, tasks=tests)
-                elif args.log_path.lower() == 'stdout':
-                    for test in tests:
-                        print("Running test task {0}".format(test))
-                        print(test.execute())
                 else:
-                    TaskManager.log_tests(args.log_path, tests=tests)
+                    TaskManager.run_tests(tests=tests)
 
     def genetic(self):
         """Use genetic algorithms to successfully learn how to use an
@@ -121,11 +121,14 @@ class Main(object):
         parser.add_argument(
             "--fresh", action="store_true",
             help="Don't attempt to load in saved results.")
+        parser.add_argument(
+            "--debug", action="store_true",
+            help="Enable debug loggin level.")
 
         args = parser.parse_args(sys.argv[2:])
         self.conf.load_cli_args(args, command=True)
 
-        GeneticEntityTester(
+        gtester = GeneticEntityTester(
             config=self.conf,
             entity=args.entity,
             method=args.method,
@@ -136,7 +139,12 @@ class Main(object):
             disable_recursion=args.disable_recursion,
             seek_bad=args.seek_bad,
             fresh=args.fresh
-        ).run()
+        )
+        self.conf.init_logger(
+            path='logs/{}.log'.format(gtester.test_name),
+            level='debug' if args.debug else None
+        )
+        gtester.run()
 
     def config(self):
         parser = argparse.ArgumentParser()
@@ -234,4 +242,9 @@ class Main(object):
         return None
 
 if __name__ == '__main__':
-    Main()
+    try:
+        Main()
+    except KeyboardInterrupt:
+        logger.warning('Rizza stopped by user.')
+    except Exception as err:
+        logger.error(err)

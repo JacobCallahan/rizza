@@ -4,10 +4,11 @@ import os
 import json
 import pytest
 from rizza import task_manager
+from rizza.helpers import logger
 
 IMPORT_FILE = 'data/example.txt'
 EXPORT_FILE = 'data/temp_export.txt'
-LOG_FILE = 'data/temp_log.txt'
+LOG_FILE = 'logs/temp.log'
 
 
 def test_positive_import_tasks():
@@ -32,13 +33,15 @@ def test_positive_export_tasks():
     os.remove(EXPORT_FILE)
 
 
-def test_positive_log_tests():
-    """Log mock test runs and validate the generated results."""
+def test_positive_run_tests():
+    """Run mock tests and validate the generated results."""
     tasks = task_manager.TaskManager.import_tasks(IMPORT_FILE)
-    task_manager.TaskManager.log_tests(LOG_FILE, tasks, True)
+    logger.setup_logzero(LOG_FILE, 'info')
+    task_manager.TaskManager.run_tests(tasks, True)
     with open(LOG_FILE) as test_file:
         for test in test_file:
             split_test = test.split('~')
             # The test data just before being ran must match 'after'
-            assert json.loads(split_test[1]) == json.loads(split_test[2])
+            if len(split_test) == 3:
+                assert json.loads(split_test[1]) == json.loads(split_test[2])
     os.remove(LOG_FILE)

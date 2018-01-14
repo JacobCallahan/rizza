@@ -2,6 +2,16 @@
 History
 =======
 
+0.4.0(2018-01-13)
+=================
+
++ Introducing true logging!
++ Added logzero dependency
++ Added logger.py to helpers
++ Replaced almost all print statements with logger calls
++ Added logging to config file
++ Other minor fixes/changes
+
 0.3.4(2018-01-07)
 +++++++++++++++++
 

@@ -11,6 +11,7 @@ with open('HISTORY.rst') as history_file:
 
 requirements = [
     'attrs',
+    'logzero',
     'nailgun',
     'pyyaml',
     'pytest'
@@ -18,7 +19,7 @@ requirements = [
 
 setup(
     name='rizza',
-    version='0.3.4',
+    version='0.4.0',
     description="An increasingly intelligent method to test RH Satellite.",
     long_description=readme + '\n\n' + history,
     author="Jacob J Callahan",
@@ -37,12 +38,11 @@ setup(
     zip_safe=False,
     keywords='rizza',
     classifiers=[
-        'Development Status :: 2 - Pre-Alpha',
+        'Development Status :: 3 - Alpha',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
         'Natural Language :: English',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.3',
         'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
