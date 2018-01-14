@@ -4,6 +4,7 @@ import random
 import yaml
 import attr
 from pathlib import Path
+from logzero import logger
 from rizza import entity_tester
 from rizza.helpers import genetics
 from rizza.helpers.misc import dict_search
@@ -168,7 +169,7 @@ class GeneticEntityTester():
                     self._save_test(attr.asdict(
                         self._genes_to_task(organism.genes),
                         filter=lambda attr, value: attr.name != 'config'))
-                    print('Success! Generation {} passed with:\n{}'.format(
+                    logger.info('Success! Generation {} passed with:\n{}'.format(
                         generation,
                         yaml.dump(
                             attr.asdict(
@@ -182,7 +183,7 @@ class GeneticEntityTester():
                 organism.points = self._judge(result, mock)
 
             population.sort_population()
-            print('Generation {} best: {}'.format(
+            logger.info('Generation {} best: {}'.format(
                 generation, population.population[0]))
             # breed the current generation and iterate
             population.breed_population()
@@ -197,7 +198,7 @@ class GeneticEntityTester():
         test = self._load_test()
         if test:
             test = self._genes_to_task(test)
-            print('\n\nCreating {}...'.format(self.entity))
+            logger.info('Creating {}...'.format(self.entity))
             result = test.execute()
             if 'pass' in result:
                 return result['pass'].get('id', 1)

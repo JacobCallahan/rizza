@@ -2,6 +2,7 @@
 """A module that provides utilities to test Nailgun entities."""
 import inspect
 import attr
+from logzero import logger
 from nailgun import entities
 from rizza.helpers.genetics import Population
 from rizza.helpers import inputs, config
@@ -106,7 +107,7 @@ class EntityTester(object):
                     entity(), predicate=inspect.ismethod)
             except TypeError as err:
                 # Failed nailgun's _check_for_value
-                print('Unable to init {} due to {}'.format(entity, err))
+                logger.error('Unable to init {} due to {}'.format(entity, err))
                 return None
             mdict = {name: method
                      for name, method in methods
@@ -121,7 +122,7 @@ class EntityTester(object):
                 entity_inst = entity()
             except TypeError as err:
                 # Failed nailgun's _check_for_value
-                print('Unable to init {} due to {}'.format(entity, err))
+                logger.error('Unable to init {} due to {}'.format(entity, err))
                 return None
             return dictionary_exclusion(entity_inst._fields, exclude)
 
@@ -186,14 +187,20 @@ class EntityTestTask(object):
         self.arg_dict = {arg: imeths.get(inpt, lambda: inpt)() for arg, inpt
                          in self.arg_dict.items() if not 'genetic' in inpt}
 
+        logger.debug('Executing: {} {} with fields: {} and args {}'.format(
+            self.entity, self.method, self.field_dict, self.arg_dict
+        ))
         try:
             entity = EntityTester.pull_entities()[self.entity](**self.field_dict)
             result = getattr(entity, self.method)(**self.arg_dict)
             if not isinstance(result, dict):
                 result = result.to_json_dict()
+            logger.debug('pass: {}'.format(result))
             return {'pass': result}
         except Exception as e:
-            return {'fail': handle_exception(e)}
+            handled = handle_exception(e)
+            logger.debug('fail: {}'.format(handled))
+            return {'fail': handled}
 
 
 @attr.s(slots=True)

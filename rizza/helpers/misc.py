@@ -66,7 +66,7 @@ def handle_exception(exception=None):
                 if 'json' in dir(contents):
                     try:
                         resp[name] = contents.json()
-                    except Error as err:
+                    except Exception as err:
                         resp[name] = contents.content
                 else:
                     resp[name] = contents

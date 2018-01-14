@@ -4,7 +4,9 @@ import json
 import os
 import yaml
 import attr
+from logzero import logger
 from nailgun.config import ServerConfig
+from rizza.helpers import logger as rza_logger
 
 
 @attr.s()
@@ -49,7 +51,7 @@ class Config():
                     path='config/server_configs.json')
                 server_config.save()
             except Exception as e:
-                pass
+                logger.error(e)
         self.nailgun_config(conf=server_config)
 
     def _load_genetics(self):
@@ -89,12 +91,12 @@ class Config():
                 try:
                     loaded_cfg = json.load(tempf)
                 except Exception as e:
-                    print(e)
+                    logger.error(e)
             elif '.yml' in infile or '.yaml' in infile:
                 try:
                     loaded_cfg = yaml.load(tempf)
                 except Exception as e:
-                    print(e)
+                    logger.error(e)
 
         if 'NAILGUN' in loaded_cfg:
             self.NAILGUN = loaded_cfg['NAILGUN']
@@ -104,6 +106,10 @@ class Config():
         if 'RIZZA' in loaded_cfg:
             self.RIZZA = loaded_cfg['RIZZA']
             self._load_genetics()
+            self.RIZZA['LOG PATH'] = self.RIZZA.get(
+                'LOG PATH', 'logs/rizza.log')
+            self.RIZZA['LOG LEVEL'] = self.RIZZA.get(
+                'LOG LEVEL', 'info')
 
     def load_cli_args(self, args=None, command=False):
         """Pull in any relevant settings from argparse"""
@@ -124,18 +130,18 @@ class Config():
                     self._load_nailgun(path=args.path)
                 if not args.show and not args.clear:
                     self.save_config()
-                    print('Set nailgun configuration.')
+                    logger.debug('Set nailgun configuration.')
             elif args.project == 'rizza':
                 if args.path:
                     self.RIZZA['CONFILE'] = args.path
                 if not args.show and not args.clear:
                     self.save_config()
-                    print('Set rizza configuration.')
+                    logger.debug('Set rizza configuration.')
         elif command:
             # If we are pulling in args from a command, save them for future use
             self.RIZZA['LAST'] = vars(args)
             self.save_config()
-            print('Command arguments saved in: {}'.format(self.RIZZA['CONFILE']))
+            logger.debug('Command arguments saved in: {}'.format(self.RIZZA['CONFILE']))
 
     def save_config(self, cfg_file=None):
         """Save the current configuration to a yaml or json file"""
@@ -161,7 +167,7 @@ class Config():
             elif '.yml' in outfile or '.yaml' in outfile:
                 yaml.dump(out_dict, cfg_dump, default_flow_style=False)
 
-        print('Saved current configuration in: {}'.format(outfile))
+        logger.info('Saved current configuration in: {}'.format(outfile))
         # Add back in the sanitized items
         for item in sanitized:
             self.__dict__[item['component']][item['name']] = item['contents']
@@ -190,6 +196,11 @@ class Config():
                 label=self.NAILGUN.get('LABEL', label))
             self.NAILGUN['CONFIG'] = server_conf
         return self.NAILGUN['CONFIG']
+
+    def init_logger(self, path=None, level=None):
+        path = path or self.RIZZA['LOG PATH']
+        level = level or self.RIZZA['LOG LEVEL']
+        rza_logger.setup_logzero(path, level)
 
     def clear_nailgun(self):
         """Clear all current nailgun configurations"""
