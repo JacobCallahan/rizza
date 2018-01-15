@@ -9,6 +9,7 @@ from nailgun.config import ServerConfig
 from rizza.entity_tester import EntityTester
 from rizza.genetic_tester import GeneticEntityTester
 from rizza.helpers.config import Config
+from rizza.helpers import prune
 from rizza.task_manager import TaskManager
 
 
@@ -122,29 +123,38 @@ class Main(object):
             "--fresh", action="store_true",
             help="Don't attempt to load in saved results.")
         parser.add_argument(
+            "--prune", action="store_true", help="Remove positive tests that "
+            "don't pass. Can specify 'All' for entity")
+        parser.add_argument(
             "--debug", action="store_true",
             help="Enable debug loggin level.")
 
         args = parser.parse_args(sys.argv[2:])
         self.conf.load_cli_args(args, command=True)
 
-        gtester = GeneticEntityTester(
-            config=self.conf,
-            entity=args.entity,
-            method=args.method,
-            population_count=args.population_count,
-            max_generations=args.max_generations,
-            max_recursive_generations=args.max_recursive_generations,
-            max_recursive_depth=args.max_recursive_depth,
-            disable_recursion=args.disable_recursion,
-            seek_bad=args.seek_bad,
-            fresh=args.fresh
-        )
-        self.conf.init_logger(
-            path='logs/{}.log'.format(gtester.test_name),
-            level='debug' if args.debug else None
-        )
-        gtester.run()
+        if args.prune:
+            self.conf.init_logger(
+                path='logs/prune.log', level='debug' if args.debug else None
+            )
+            prune.genetic_prune(self.conf, args.entity)
+        else:
+            gtester = GeneticEntityTester(
+                config=self.conf,
+                entity=args.entity,
+                method=args.method,
+                population_count=args.population_count,
+                max_generations=args.max_generations,
+                max_recursive_generations=args.max_recursive_generations,
+                max_recursive_depth=args.max_recursive_depth,
+                disable_recursion=args.disable_recursion,
+                seek_bad=args.seek_bad,
+                fresh=args.fresh
+            )
+            self.conf.init_logger(
+                path='logs/{}.log'.format(gtester.test_name),
+                level='debug' if args.debug else None
+            )
+            gtester.run()
 
     def config(self):
         parser = argparse.ArgumentParser()

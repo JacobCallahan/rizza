@@ -195,11 +195,13 @@ class GeneticEntityTester():
 
     def run_best(self):
         """Pull the best saved test, if any, run it, and return the id"""
+        self.config.RIZZA['GENETICS']['ALLOW RECURSION'] = False
+        self.config.RIZZA['GENETICS']['MAX GENERATIONS'] = 1
         test = self._load_test()
         if test:
             test = self._genes_to_task(test)
             logger.info('Creating {}...'.format(self.entity))
             result = test.execute()
             if 'pass' in result:
-                return result['pass'].get('id', 1)
-        return 1
+                return result['pass'].get('id', -1)
+        return -1
