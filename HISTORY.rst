@@ -2,6 +2,15 @@
 History
 =======
 
+0.4.2(2018-01-21)
+=================
+
++ Added ability to disable genetic dependencies
++ Added smarter variable input methods
++ Switched inspect.argparse to inspect.signature (deprecated in 3.6)
++ Added two input methods to help create repositories
+- Removed explicitly defined long input methods
+
 0.4.1(2018-01-15)
 =================
 

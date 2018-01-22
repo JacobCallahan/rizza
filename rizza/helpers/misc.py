@@ -1,8 +1,11 @@
 # -*- encoding: utf-8 -*-
 """A module that provides miscellaneous helper functions."""
+from inspect import signature
 from itertools import combinations, product
 from json import loads
+from random import randint
 from requests import HTTPError
+from logzero import logger
 from nailgun import entity_mixins
 
 
@@ -111,3 +114,35 @@ def field_to_entity(field):
     field = ''.join([x.capitalize() for x in field.split('_')])
     if field in entity_list:
         return field
+
+
+def get_default_type(func):
+    """Return the type of the first default argument for a function or None"""
+    parameters = signature(func).parameters
+    types = []
+    for key in parameters.keys():
+        if parameters[key].default:
+            types.append(type(parameters[key].default))
+    return types
+
+
+def form_input(name, methods, field, config):
+    """Take in a function name, get information, call it, return result"""
+    if 'genetic' in name:
+        entity = field_to_entity(field)
+        if entity:
+            return methods.get(
+                name, lambda: name)(config, entity)
+        else:  # if the entity isn't valid, suggest removing the field
+            return '~'
+    else:
+        types = get_default_type(methods.get(name, lambda: name))
+        if types and types[0] == int and types.count(types[0]) == len(types):
+            # currently only support integers
+            for i in range(len(types)):
+                types[i] = randint(1, 20)
+            try:
+                return methods.get(name, lambda: name)(*types)
+            except Exception as err:
+                logger.debug(err)
+        return methods.get(name, lambda: name)()

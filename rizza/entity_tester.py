@@ -8,7 +8,7 @@ from rizza.helpers.genetics import Population
 from rizza.helpers import inputs, config
 from rizza.helpers.misc import (combination_list, product_list,
                                 handle_exception, map_field_inputs,
-                                dictionary_exclusion, field_to_entity)
+                                dictionary_exclusion, form_input)
 
 
 @attr.s()
@@ -120,17 +120,18 @@ class EntityTester(object):
         if entity:
             try:
                 entity_inst = entity()
-            except TypeError as err:
-                # Failed nailgun's _check_for_value
+                fields = entity_inst._fields
+            except Exception as err:
+                # Failed nailgun's _check_for_value or entity doens't have _fields
                 logger.error('Unable to init {} due to {}'.format(entity, err))
                 return None
-            return dictionary_exclusion(entity_inst._fields, exclude)
+            return dictionary_exclusion(fields, exclude)
 
     @staticmethod
     def pull_args(method=None):
         """Return a list of args belonging to an entity's method."""
         if method:
-            return [arg for arg in inspect.getargspec(method).args
+            return [arg for arg in inspect.signature(method).parameters.keys()
                     if arg != 'self']
 
     @staticmethod
@@ -172,15 +173,10 @@ class EntityTestTask(object):
         imeths = EntityTester.pull_input_methods()
         cut_list = []
         for field, inpt in self.field_dict.items():
-            if 'genetic' in inpt:
-                entity = field_to_entity(field)
-                if entity:
-                    self.field_dict[field] = imeths.get(
-                        inpt, lambda: inpt)(self.config, entity)
-                else:  # if the entity isn't valid, remove the field
-                    cut_list.append(field)
-            else:
-                self.field_dict[field] = imeths.get(inpt, lambda: inpt)()
+            self.field_dict[field] = form_input(
+                inpt, imeths, field, self.config)
+            if self.field_dict[field] == '~':
+                cut_list.append(field)
         for entry in cut_list:
             del self.field_dict[entry]
 

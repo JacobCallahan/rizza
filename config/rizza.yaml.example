@@ -7,6 +7,7 @@ NAILGUN:
 RIZZA:
   CONFILE: config/rizza.yaml
   GENETICS:
+    ALLOW DEPENDENCIES: true
     ALLOW RECURSION: true
     CRITERIA:
       '200': 1000
