@@ -31,6 +31,7 @@ class GeneticEntityTester():
     max_generations = attr.ib(default=None)
     max_recursive_generations = attr.ib(default=None)
     max_recursive_depth = attr.ib(default=None)
+    disable_dependencies = attr.ib(default=None)
     disable_recursion = attr.ib(default=None)
     seek_bad = attr.ib(default=False)
     fresh = attr.ib(default=False)
@@ -57,6 +58,8 @@ class GeneticEntityTester():
         if self.max_recursive_generations:
             self.config.RIZZA['GENETICS'][
                 'MAX RECURSIVE GENERATIONS'] = self.max_recursive_generations
+        if self.disable_dependencies:
+            self.config.RIZZA['GENETICS']['ALLOW DEPENDENCIES'] = False
         if self.disable_recursion:
             self.config.RIZZA['GENETICS']['ALLOW RECURSION'] = False
         if self.max_recursive_depth:
@@ -161,6 +164,7 @@ class GeneticEntityTester():
 
         for generation in range(self.max_generations):
             for organism in population.population:
+                logger.debug('Testing {}'.format(organism))
                 # create an entity_tester. from the organism
                 task = self._genes_to_task(organism.genes)
                 # execute the test task

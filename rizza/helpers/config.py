@@ -63,6 +63,8 @@ class Config():
             self.RIZZA['GENETICS']['POPULATION COUNT'] = 100
         if not self.RIZZA['GENETICS'].get('MAX GENERATIONS'):
             self.RIZZA['GENETICS']['MAX GENERATIONS'] = 10000
+        if self.RIZZA['GENETICS'].get('ALLOW DEPENDENCIES', 'x') == 'x':
+            self.RIZZA['GENETICS']['ALLOW DEPENDENCIES'] = True
         if self.RIZZA['GENETICS'].get('ALLOW RECURSION', 'x') == 'x':
             self.RIZZA['GENETICS']['ALLOW RECURSION'] = True
         if not self.RIZZA['GENETICS'].get('MAX RECURSIVE GENERATIONS'):
@@ -86,17 +88,21 @@ class Config():
     def load_config(self, cfg_file=None):
         """Attempt to load in config files"""
         infile = cfg_file or self.RIZZA['CONFILE']
-        with open(infile) as tempf:
-            if '.json' in infile:
-                try:
-                    loaded_cfg = json.load(tempf)
-                except Exception as e:
-                    logger.error(e)
-            elif '.yml' in infile or '.yaml' in infile:
-                try:
-                    loaded_cfg = yaml.load(tempf)
-                except Exception as e:
-                    logger.error(e)
+        try:
+            with open(infile) as tempf:
+                if '.json' in infile:
+                    try:
+                        loaded_cfg = json.load(tempf)
+                    except Exception as e:
+                        logger.error(e)
+                elif '.yml' in infile or '.yaml' in infile:
+                    try:
+                        loaded_cfg = yaml.load(tempf)
+                    except Exception as e:
+                        logger.error(e)
+        except Exception as e:
+            logger.error(e)
+            raise(e)
 
         if 'NAILGUN' in loaded_cfg:
             self.NAILGUN = loaded_cfg['NAILGUN']

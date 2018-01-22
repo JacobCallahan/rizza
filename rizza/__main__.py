@@ -117,6 +117,9 @@ class Main(object):
             "--seek-bad", action="store_true",
             help="Used to promote bad results, based on your config.")
         parser.add_argument(
+            "--disable-dependencies", action="store_true",
+            help="Stop rizza from creating required entities.")
+        parser.add_argument(
             "--disable-recursion", action="store_true",
             help="Stop rizza from attempting to create required entities.")
         parser.add_argument(
@@ -146,6 +149,7 @@ class Main(object):
                 max_generations=args.max_generations,
                 max_recursive_generations=args.max_recursive_generations,
                 max_recursive_depth=args.max_recursive_depth,
+                disable_dependencies=args.disable_dependencies,
                 disable_recursion=args.disable_recursion,
                 seek_bad=args.seek_bad,
                 fresh=args.fresh

@@ -11,45 +11,37 @@ def gen_choice():
     return None
 
 
-def gen_alpha_long():
-    return gen_alpha(256)
+def content_type(choice=1):
+    choices = {
+        1: 'yum',
+        2: 'puppet',
+        3: 'docker',
+        4: 'file'
+    }
+    return choices.get(choice, choices[1])
 
 
-def gen_alphanumeric_long():
-    return gen_alphanumeric(256)
+def yum_url(choice=1):
+    choices = {
+        1: 'https://omaciel.fedorapeople.org/fakerepo01/',
+        2: 'https://omaciel.fedorapeople.org/fakerepo02/'
+    }
+    return choices.get(choice, choices[1])
 
 
-def gen_cjk_long():
-    return gen_cjk(256)
-
-
-def gen_cyrillic_long():
-    return gen_cyrillic(256)
-
-
-def gen_html_long():
-    return gen_html(256)
-
-
-def gen_iplum_long():
-    return gen_iplum(256)
-
-
-def gen_latin1_long():
-    return gen_latin1(256)
-
-
-def gen_numeric_string_long():
-    return gen_numeric_string(256)
-
-
-def gen_utf8_long():
-    return gen_utf8(256)
+def puppet_url(choice=1):
+    choices = {
+        1: 'https://omaciel.fedorapeople.org/7c74c2b8/',
+        2: 'https://omaciel.fedorapeople.org/'
+    }
+    return choices.get(choice, choices[1])
 
 
 def genetic_known(config, entity='Organization'):
     """Attempt to create a known entity and return the id"""
     from rizza.genetic_tester import GeneticEntityTester
+    if not config.RIZZA['GENETICS']['ALLOW DEPENDENCIES']:
+        return None
     gtester = GeneticEntityTester(config, entity, 'create')
     if not gtester._load_test():
         gtester.run(save_only_passed=True)
@@ -60,7 +52,8 @@ def genetic_unknown(config, entity='Organization', max_generations=None):
     """Attempt to create an unknown entity and return the id"""
     from rizza.genetic_tester import GeneticEntityTester
     from logzero import logger
-    if not config.RIZZA['GENETICS']['ALLOW RECURSION']:
+    if (not config.RIZZA['GENETICS']['ALLOW RECURSION'] or
+        not config.RIZZA['GENETICS']['ALLOW DEPENDENCIES']):
         return None
 
     if not max_generations:
