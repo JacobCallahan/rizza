@@ -75,16 +75,22 @@ class GeneticEntityTester():
         self._etester = entity_tester.EntityTester(self.entity)
         self._etester.prep()
 
-    def _save_test(self, test):
-        """Save the test to the appropriate file in data/genetic_tests"""
-        test_file = Path('data', 'genetic_tests', '{}.yaml'.format(self.entity))
+    def _save_organism(self, test):
+        """Save the test organism to the appropriate file in data/genetic_tests"""
+        test_file = self.config.base_dir.joinpath(
+            'data/genetic_tests/{}.yaml'.format(self.entity))
+        test_file.parent.mkdir(parents=True, exist_ok=True)
         tests = yaml.load(test_file.open('r+')) or {}
-        tests[self.test_name] = test
+        tests[self.test_name] = attr.asdict(
+            self._genes_to_task(test.genes),
+            filter=lambda attr, value: attr.name != 'config')
         yaml.dump(tests, test_file.open('w+'), default_flow_style=False)
 
     def _load_test(self):
         """Load in the last test stored in data/genetic_tests, if any exist"""
-        test_file = Path('data', 'genetic_tests', '{}.yaml'.format(self.entity))
+        test_file = self.config.base_dir.joinpath(
+            'data/genetic_tests/{}.yaml'.format(self.entity))
+        test_file.parent.mkdir(parents=True, exist_ok=True)
         if test_file.exists():
             tests = yaml.load(test_file.open('r')) or {}
             best = tests.get(self.test_name, False)
@@ -170,9 +176,7 @@ class GeneticEntityTester():
                 # execute the test task
                 result = task.execute(mock)
                 if 'pass' in result and not mock and not self.seek_bad:
-                    self._save_test(attr.asdict(
-                        self._genes_to_task(organism.genes),
-                        filter=lambda attr, value: attr.name != 'config'))
+                    self._save_organism(organism.genes)
                     logger.info('Success! Generation {} passed with:\n{}'.format(
                         generation,
                         yaml.dump(
@@ -193,9 +197,7 @@ class GeneticEntityTester():
             population.breed_population()
         if not mock and not save_only_passed:
             # save the current best in the config
-            self._save_test(attr.asdict(
-                self._genes_to_task(population.population[0].genes),
-                filter=lambda attr, value: attr.name != 'config'))
+            self._save_organism(population.population[0])
 
     def run_best(self):
         """Pull the best saved test, if any, run it, and return the id"""

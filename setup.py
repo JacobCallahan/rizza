@@ -1,7 +1,23 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
+from pathlib import Path
 from setuptools import setup
+from setuptools.command.install import install
+from shutil import copy
+
+class PostInstallCommand(install):
+    def run(self):
+        home = Path.home()
+        # copy example config file
+        config_file = Path('config/rizza.yaml.example')
+        dest_file = home.joinpath('rizza/config/rizza.yaml.example')
+        dest_file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            copy(config_file.absolute(), dest_file)
+        except:
+            # the files are the same
+            pass
+        install.run(self)
 
 with open('README.md') as readme_file:
     readme = readme_file.read()
@@ -18,8 +34,9 @@ requirements = [
 ]
 
 setup(
+    cmdclass={'install': PostInstallCommand},
     name='rizza',
-    version='0.4.2',
+    version='0.5.0',
     description="An increasingly intelligent method to test RH Satellite.",
     long_description=readme + '\n\n' + history,
     author="Jacob J Callahan",
@@ -43,8 +60,6 @@ setup(
         'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
         'Natural Language :: English',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.4',
-        'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
     ]
 )

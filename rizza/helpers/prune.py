@@ -13,7 +13,8 @@ def genetic_prune(conf, entity='All'):
         for target in list(entity_tester.EntityTester.pull_entities()):
             genetic_prune(conf, target)
     else:
-        test_file = Path('data/genetic_tests/{}.yaml'.format(entity))
+        test_file = conf.base_dir.joinpath(
+            'data/genetic_tests/{}.yaml'.format(entity))
         logger.debug('Current target file: {}'.format(test_file))
         to_remove = []
         if test_file.exists() and test_file.stat().st_size > 10:

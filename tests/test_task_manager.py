@@ -6,8 +6,8 @@ import pytest
 from rizza import task_manager
 from rizza.helpers import logger
 
-IMPORT_FILE = 'data/example.txt'
-EXPORT_FILE = 'data/temp_export.txt'
+IMPORT_FILE = 'tests/data/example.txt'
+EXPORT_FILE = 'tests/data/temp_export.txt'
 LOG_FILE = 'logs/temp.log'
 
 

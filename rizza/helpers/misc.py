@@ -88,6 +88,8 @@ def json_serial(obj=None):
         return loads(obj.body)
     elif obj.__class__.__name__ == 'Response':
         return {'message': obj.json(), 'status': obj.status_code}
+    elif obj.__class__.__name__ == 'PosixPath':
+        return str(obj)
     raise TypeError("Type {0} not serializable".format(type(obj)))
 
 

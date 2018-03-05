@@ -3,7 +3,7 @@ MAINTAINER https://github.com/JacobCallahan
 
 RUN mkdir rizza
 COPY / /root/rizza/
-RUN cd /root/rizza && python3 setup.py install
+RUN cd /root/rizza && pip install . --upgrade
 
 WORKDIR /root/rizza
 

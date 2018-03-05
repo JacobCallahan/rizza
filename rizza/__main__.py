@@ -6,6 +6,7 @@ import pytest
 from fauxfactory import gen_uuid
 from logzero import logger
 from nailgun.config import ServerConfig
+from pathlib import Path
 from rizza.entity_tester import EntityTester
 from rizza.genetic_tester import GeneticEntityTester
 from rizza.helpers.config import Config
@@ -66,12 +67,12 @@ class Main(object):
         args = parser.parse_args(sys.argv[2:])
         self.conf.load_cli_args(args, command=True)
         self.conf.init_logger(
-            path='logs/{}'.format(args.log_name),
+            path=self.conf.base_dir.joinpath('logs/{}'.format(args.log_name)),
             level='debug' if args.debug else None
         )
 
         if args.import_path:
-            tests = TaskManager.import_tasks(args.import_path)
+            tests = TaskManager.import_tasks(Path(args.import_path))
             TaskManager.run_tests(tests=tests)
         else:
             for entity in args.entities:
@@ -86,7 +87,7 @@ class Main(object):
                 )
                 if args.output_path:
                     TaskManager.export_tasks(
-                        path=args.output_path, tasks=tests)
+                        path=Path(args.output_path), tasks=tests)
                 else:
                     TaskManager.run_tests(tests=tests)
 
@@ -137,7 +138,8 @@ class Main(object):
 
         if args.prune:
             self.conf.init_logger(
-                path='logs/prune.log', level='debug' if args.debug else None
+                path=self.conf.base_dir.joinpath('logs/prune.log'),
+                level='debug' if args.debug else None
             )
             prune.genetic_prune(self.conf, args.entity)
         else:
@@ -155,7 +157,8 @@ class Main(object):
                 fresh=args.fresh
             )
             self.conf.init_logger(
-                path='logs/{}.log'.format(gtester.test_name),
+                path=self.conf.base_dir.joinpath(
+                    'logs/{}.log'.format(gtester.test_name)),
                 level='debug' if args.debug else None
             )
             gtester.run()

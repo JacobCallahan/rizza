@@ -2,9 +2,11 @@
 """Module handling internal and dependency logging."""
 import logging
 import logzero
+from pathlib import Path
 
 
 def setup_logzero(path, level):
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     log_fmt = '%(color)s[%(levelname)s %(asctime)s]%(end_color)s %(message)s'
     if level == 'debug':
         level = logging.DEBUG
@@ -28,4 +30,4 @@ def setup_logzero(path, level):
 
 
 logging.getLogger('nailgun').setLevel(logging.ERROR)
-setup_logzero('logs/rizza.log', 'info')
+setup_logzero(Path.home().joinpath('logs/rizza.log'), 'info')
