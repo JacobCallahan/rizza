@@ -6,7 +6,9 @@ import yaml
 import attr
 from logzero import logger
 from nailgun.config import ServerConfig
+from pathlib import Path
 from rizza.helpers import logger as rza_logger
+from rizza.helpers.misc import json_serial
 
 
 @attr.s()
@@ -26,6 +28,12 @@ class Config():
     def __attrs_post_init__(self):
         """Load in config files, then environment variables"""
         # first, attempt to load nailgun config
+        self.base_dir = Path.home().joinpath('rizza')
+        # we want to always use current directory as base for tests
+        if 'tests' in str(self.cfg_file):
+            self.cfg_file = Path().joinpath(self.cfg_file)
+        elif self.cfg_file != str(Path(self.cfg_file).absolute()):
+            self.cfg_file = self.base_dir.joinpath(self.cfg_file)
         self.RIZZA['CONFILE'] = self.cfg_file
         self.load_config()
         self._load_environment_vars()
@@ -48,7 +56,7 @@ class Config():
         except:
             try:
                 server_config = ServerConfig(url='').get(
-                    path='config/server_configs.json')
+                    path=self.base_dir.joinpath('config/server_configs.json'))
                 server_config.save()
             except Exception as e:
                 logger.error(e)
@@ -87,15 +95,16 @@ class Config():
 
     def load_config(self, cfg_file=None):
         """Attempt to load in config files"""
-        infile = cfg_file or self.RIZZA['CONFILE']
+        infile = cfg_file or self.cfg_file
+        logger.info('Loading config from {}'.format(infile))
         try:
             with open(infile) as tempf:
-                if '.json' in infile:
+                if '.json' in str(infile):
                     try:
                         loaded_cfg = json.load(tempf)
                     except Exception as e:
                         logger.error(e)
-                elif '.yml' in infile or '.yaml' in infile:
+                elif '.yml' in str(infile) or '.yaml' in str(infile):
                     try:
                         loaded_cfg = yaml.load(tempf)
                     except Exception as e:
@@ -114,6 +123,8 @@ class Config():
             self._load_genetics()
             self.RIZZA['LOG PATH'] = self.RIZZA.get(
                 'LOG PATH', 'logs/rizza.log')
+            if self.RIZZA['LOG PATH'] != str(Path(self.RIZZA['LOG PATH']).absolute()):
+                self.RIZZA['LOG PATH'] = self.base_dir.joinpath(self.RIZZA['LOG PATH'])
             self.RIZZA['LOG LEVEL'] = self.RIZZA.get(
                 'LOG LEVEL', 'info')
 
@@ -152,9 +163,9 @@ class Config():
     def save_config(self, cfg_file=None):
         """Save the current configuration to a yaml or json file"""
         # Include any non-serializable objects that can't be saved.
-        outfile = cfg_file or self.RIZZA.get('CONFILE', self.cfg_file)
+        outfile = Path(cfg_file or self.cfg_file)
         # Use this list to remove entire class variables
-        exclude_list = ['cfg_file']
+        exclude_list = ['base_dir', 'cfg_file']
         # Use this list to remove unserializable objects
         sanitized = [{
             'component': 'NAILGUN', 'name': 'CONFIG',
@@ -165,12 +176,12 @@ class Config():
             if self.__dict__[item['component']].get(item['name'], None):
                 del self.__dict__[item['component']][item['name']]
 
-        with open(outfile, 'w') as cfg_dump:
+        with outfile.open('w') as cfg_dump:
             out_dict = attr.asdict(self,
                 filter=lambda attr, value: attr.name not in exclude_list)
-            if '.json' in outfile:
-                json.dump(out_dict, cfg_dump, indent=4)
-            elif '.yml' in outfile or '.yaml' in outfile:
+            if '.json' in str(outfile):
+                json.dump(out_dict, cfg_dump, indent=4, default=json_serial)
+            elif '.yml' in str(outfile) or '.yaml' in str(outfile):
                 yaml.dump(out_dict, cfg_dump, default_flow_style=False)
 
         logger.info('Saved current configuration in: {}'.format(outfile))

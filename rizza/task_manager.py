@@ -34,9 +34,11 @@ class TaskManager(object):
 
         :params path: Path to the tasks file.
         """
-        with open(path) as infile:
+        with open(path, 'r') as infile:
             for line in infile:
+                logger.debug('Importing: {}'.format(line))
                 yield EntityTestTask(**json.loads(line))
+        logger.info('Finished importing.')
 
     @staticmethod
     def export_tasks(path=None, tasks=None):
@@ -45,10 +47,18 @@ class TaskManager(object):
         :params path: Path to the save file. If none, a name will be created.
         :params tasks: Can either be a list of tasks, or a task generator.
         """
-        with open(path, "w") as outfile:
+        with open(path, 'w') as outfile:
             for task in tasks:
-                json.dump(attr.asdict(task), outfile)
+                logger.debug('Exporting: {}'.format(task))
+                json.dump(
+                    attr.asdict(
+                        task,
+                        filter=lambda attr, value: attr.name != 'config'
+                    ),
+                    outfile
+                )
                 outfile.write("\n")
+        logger.info('Finished exporting.')
 
     @staticmethod
     def run_tests(tests=None, mock=False):

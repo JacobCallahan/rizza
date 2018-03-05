@@ -7,7 +7,8 @@ Installation
 or
 ```python setup.py install```
 
-After installation copy/rename the example rizza.yaml configuration, located in config/ to rizza.yaml
+Rizza will add a 'rizza' directory to your home directory, as well as a config directory with example config.
+After installation copy/rename the example configuration, located in ~/rizza/config/ to ~/rizza/config/rizza.yaml
 
 Usage
 -----
@@ -17,6 +18,7 @@ Brute Force Testing
 -------------------
 Rizza's most basic, and time consuming, operation is a brute force method of testing entities. It will try every combination of an entity's methods, fields, arguments, and available input methods.
 It is highly recommended that you limit the scope of this kind of test with --max-field, --max-inputs, and the exclude options available. An unlimited test can easily generate trillions of combinations and will likely take longer than the lifecycle of your product.
+-i, --input and -o, --output use relative paths only.
 
 **Examples:**
 ```rizza brute --help```

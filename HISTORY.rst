@@ -2,6 +2,14 @@
 History
 =======
 
+0.5.0(2018-03-05)
+=================
+
++ Rizza can now be run outside of its base directory
++ Rizza will now work out of the user's home directory
++ Importing and Exporting brute tests still expects a relative path
++ Everything else will be stored in ~/rizza/
+
 0.4.2(2018-01-21)
 =================
 
