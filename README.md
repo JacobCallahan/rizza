@@ -19,11 +19,12 @@ Brute Force Testing
 Rizza's most basic, and time consuming, operation is a brute force method of testing entities. It will try every combination of an entity's methods, fields, arguments, and available input methods.
 It is highly recommended that you limit the scope of this kind of test with --max-field, --max-inputs, and the exclude options available. An unlimited test can easily generate trillions of combinations and will likely take longer than the lifecycle of your product.
 -i, --input and -o, --output use relative paths only.
+**Note:** Using --async will load all tests into memory, so it is advised to limit the numbers to tests by either breaking them up into separate files, or limiting the scope of the methods and fields.
 
 **Examples:**
 ```rizza brute --help```
 
-```rizza brute -e Product -o tester.txt --max-fields 2 --max-inputs 1 --method-exclude raw search read get payload```
+```rizza brute -e Product -o tester.txt --max-fields 2 --max-inputs 1 --method-exclude raw search read get payload --async```
 
 ```rizza brute -i 10tests.txt -l stdout```
 
@@ -31,14 +32,14 @@ Genetic Algorithm-Based Testing
 -------------------------------
 Rizza is able to test entities (via their methods) using genetic algorithms to evolve toward a positive or negative goal. You can adjust the scoring criteria in config/rizza.yaml.
 Rizza, by default, will recursively try to create entities it both does and doesn't know how to, in order to resolve dependencies. You can limit or turn this off both in the config or at run-time with cli args. Note that this recursive process adds a significant amount of time.
-Once a test completes, it is saved in data/genetic_tests/
+Once a test completes, it is saved in ~/rizza/data/genetic_tests/
 
 **Examples:**
 ```rizza genetic --help```
 
 ```rizza genetic -e Organization -m create```
 
-```rizza genetic -e Organization -m create --max-generations 100 --seek-bad --fresh --disable-recursion```
+```rizza genetic -e Organization -m create --max-generations 100 --seek-bad --fresh --disable-recursion --async```
 
 Configuration
 -------------
@@ -89,4 +90,4 @@ or
 
 Note
 ----
-This project only explicitly supports python 3.4+, and will likely be 3.6+ in the near future.
+This project only explicitly supports python 3.6+
