@@ -1,5 +1,6 @@
 # -*- encoding: utf-8 -*-
 """A utility that tries saved genetic tests and removes those failing"""
+import asyncio
 import yaml
 from pathlib import Path
 from logzero import logger
@@ -43,3 +44,33 @@ def genetic_prune(conf, entity='All'):
         if test_file.exists() and test_file.stat().st_size < 10:
             logger.warning('Deleting empty file {}'.format(test_file))
             test_file.unlink()
+
+
+async def _async_prune(conf, entity, loop, sem):
+    """Run an individual prune task"""
+    async with sem:
+        await loop.run_in_executor(
+            None,  # use default executor
+            genetic_prune, conf, entity  # function and args
+        )
+
+
+async def _async_prune_all(conf, loop, sem):
+    """Construct all the prune tasks, and await them"""
+    tasks = [
+        asyncio.ensure_future(_async_prune(conf, entity, loop, sem))
+        for entity in list(entity_tester.EntityTester.pull_entities())
+    ]
+    await asyncio.wait(tasks)
+
+
+def async_genetic_prune(conf, entity='All', async_limit=100):
+    """Asynchronously perform a genetic prune for all entities"""
+    if entity != 'All':
+        genetic_prune(conf, entity)
+        return
+
+    sem = asyncio.Semaphore(async_limit)
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(_async_prune_all(conf, loop, sem))
+    loop.close()

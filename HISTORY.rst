@@ -2,6 +2,15 @@
 History
 =======
 
+0.5.1(2018-03-12)
+=================
+
++ Introducing asynchronous testing.
++ Async added to brute and genetic (including prune)
++ Added ability to specify 'All' for the entity in genetic
++ Included better error handling
++ Added sub directories to ~/rizza/logs
+
 0.5.0(2018-03-05)
 =================
 

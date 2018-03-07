@@ -36,7 +36,7 @@ requirements = [
 setup(
     cmdclass={'install': PostInstallCommand},
     name='rizza',
-    version='0.5.0',
+    version='0.5.1',
     description="An increasingly intelligent method to test RH Satellite.",
     long_description=readme + '\n\n' + history,
     author="Jacob J Callahan",

@@ -8,10 +8,10 @@ from logzero import logger
 from nailgun.config import ServerConfig
 from pathlib import Path
 from rizza.entity_tester import EntityTester
-from rizza.genetic_tester import GeneticEntityTester
+from rizza import genetic_tester
 from rizza.helpers.config import Config
 from rizza.helpers import prune
-from rizza.task_manager import TaskManager
+from rizza.task_manager import AsyncTaskManager, TaskManager
 
 
 class Main(object):
@@ -61,19 +61,28 @@ class Main(object):
             help="One or more methods to exclude from brute force testing. "
             "(e.g. 'raw search read get payload')")
         parser.add_argument(
+            "--async", action="store_true",
+            help="Run tests asynchronously.")
+        parser.add_argument(
+            "--async-limit", type=int, default=100,
+            help="The maximum number of tests to run asynchronously.")
+        parser.add_argument(
             "--debug", action="store_true",
             help="Enable debug loggin level.")
 
         args = parser.parse_args(sys.argv[2:])
         self.conf.load_cli_args(args, command=True)
         self.conf.init_logger(
-            path=self.conf.base_dir.joinpath('logs/{}'.format(args.log_name)),
+            path=self.conf.base_dir.joinpath('logs/brute/{}'.format(args.log_name)),
             level='debug' if args.debug else None
         )
 
         if args.import_path:
-            tests = TaskManager.import_tasks(Path(args.import_path))
-            TaskManager.run_tests(tests=tests)
+            if args.async:
+                AsyncTaskManager(args.import_path, args.async_limit).run_tests()
+            else:
+                tests = TaskManager.import_tasks(Path(args.import_path))
+                TaskManager.run_tests(tests=tests)
         else:
             for entity in args.entities:
                 e_tester = EntityTester(entity)
@@ -89,7 +98,10 @@ class Main(object):
                     TaskManager.export_tasks(
                         path=Path(args.output_path), tasks=tests)
                 else:
-                    TaskManager.run_tests(tests=tests)
+                    if args.async:
+                        AsyncTaskManager(tests, args.async_limit).run_tests()
+                    else:
+                        TaskManager.run_tests(tests=tests)
 
     def genetic(self):
         """Use genetic algorithms to successfully learn how to use an
@@ -124,6 +136,12 @@ class Main(object):
             "--disable-recursion", action="store_true",
             help="Stop rizza from attempting to create required entities.")
         parser.add_argument(
+            "--async", action="store_true",
+            help="Run tests asynchronously.")
+        parser.add_argument(
+            "--async-limit", type=int, default=100,
+            help="The maximum number of tests to run asynchronously. (default is 100")
+        parser.add_argument(
             "--fresh", action="store_true",
             help="Don't attempt to load in saved results.")
         parser.add_argument(
@@ -141,9 +159,50 @@ class Main(object):
                 path=self.conf.base_dir.joinpath('logs/prune.log'),
                 level='debug' if args.debug else None
             )
-            prune.genetic_prune(self.conf, args.entity)
+            if args.async and args.entity == 'All':
+                prune.async_genetic_prune(self.conf, args.entity, args.async_limit)
+            else:
+                prune.genetic_prune(self.conf, args.entity)
+        elif args.entity == 'All':
+            genetic_tester.run_all_entities(
+                debug=args.debug,
+                async_mode=args.async,
+                config=self.conf,
+                entity=args.entity,
+                method=args.method,
+                population_count=args.population_count,
+                max_generations=args.max_generations,
+                max_recursive_generations=args.max_recursive_generations,
+                max_recursive_depth=args.max_recursive_depth,
+                disable_dependencies=args.disable_dependencies,
+                disable_recursion=args.disable_recursion,
+                seek_bad=args.seek_bad,
+                fresh=args.fresh,
+                max_running=args.async_limit
+            )
+        elif args.async:
+            gtester = genetic_tester.AsyncGeneticEntityTester(
+                config=self.conf,
+                entity=args.entity,
+                method=args.method,
+                population_count=args.population_count,
+                max_generations=args.max_generations,
+                max_recursive_generations=args.max_recursive_generations,
+                max_recursive_depth=args.max_recursive_depth,
+                disable_dependencies=args.disable_dependencies,
+                disable_recursion=args.disable_recursion,
+                seek_bad=args.seek_bad,
+                fresh=args.fresh,
+                max_running=args.async_limit
+            )
+            self.conf.init_logger(
+                path=self.conf.base_dir.joinpath(
+                    'logs/genetic/{}.log'.format(gtester.test_name)),
+                level='debug' if args.debug else None
+            )
+            gtester.run()
         else:
-            gtester = GeneticEntityTester(
+            gtester = genetic_tester.GeneticEntityTester(
                 config=self.conf,
                 entity=args.entity,
                 method=args.method,
@@ -158,7 +217,7 @@ class Main(object):
             )
             self.conf.init_logger(
                 path=self.conf.base_dir.joinpath(
-                    'logs/{}.log'.format(gtester.test_name)),
+                    'logs/genetic/{}.log'.format(gtester.test_name)),
                 level='debug' if args.debug else None
             )
             gtester.run()

@@ -1,5 +1,6 @@
 # -*- encoding: utf-8 -*-
 """A module that provides utilities to test entities via genetic algorithms"""
+import asyncio
 import random
 import yaml
 import attr
@@ -9,6 +10,31 @@ from rizza import entity_tester
 from rizza.helpers import genetics
 from rizza.helpers.misc import dict_search
 
+
+def run_all_entities(**kwargs):
+    """Iterate through all known entities and attempt to """
+    debug = kwargs.pop('debug')
+    async_mode = kwargs.pop('async_mode')
+    if not async_mode:
+        del kwargs['max_running']
+
+    for entity in list(entity_tester.EntityTester.pull_entities()):
+        kwargs['entity'] = entity
+        try:
+            if async_mode:
+                gtester = AsyncGeneticEntityTester(**kwargs)
+            else:
+                gtester = GeneticEntityTester(**kwargs)
+        except:
+            continue
+        kwargs['config'].init_logger(
+            path=kwargs['config'].base_dir.joinpath(
+                'logs/genetic/{}.log'.format(gtester.test_name)),
+            level='debug' if debug else None
+        )
+        logger.info(f'Starting tests for {entity}')
+        gtester.run()
+    logger.info('Finished testing all entities!')
 
 @attr.s()
 class GeneticEntityTester():
@@ -69,7 +95,7 @@ class GeneticEntityTester():
         self._entity_inst = entity_tester.EntityTester.pull_entities()[self.entity]
         meths = entity_tester.EntityTester.pull_methods(self._entity_inst)
         if meths:
-            self._method_inst = meths.get(self.method)
+            self._method_inst = meths.get(self.method, None)
         else:
             self._method_inst = None
         self._etester = entity_tester.EntityTester(self.entity)
@@ -151,17 +177,26 @@ class GeneticEntityTester():
     def run(self, mock=False, save_only_passed=False):
         """Run a population attempting to maximize desired results"""
         if not self._method_inst:
+            logger.warning('{} does not have the method {}'.format(
+                self.entity, self.method
+            ))
             return None
 
         # Create our population
-        population = genetics.Population(
-            gene_base=[self._create_gene_base()],
-            population_count=self.population_count,
-            generator_function=self._create_gene_base,
-            gene_length=1,
-            mutate=False,
-            rev_pop_sort=not self.seek_bad
-        )
+        try:
+            population = genetics.Population(
+                gene_base=[self._create_gene_base()],
+                population_count=self.population_count,
+                generator_function=self._create_gene_base,
+                gene_length=1,
+                mutate=False,
+                rev_pop_sort=not self.seek_bad
+            )
+        except Exception as err:
+            logger.error('Unable to create a population due to: {}'.format(
+                err
+            ))
+            return False
         # Attempt to continue where we left off, if desired
         if not self.fresh:
             best = self._load_test()
@@ -176,7 +211,7 @@ class GeneticEntityTester():
                 # execute the test task
                 result = task.execute(mock)
                 if 'pass' in result and not mock and not self.seek_bad:
-                    self._save_organism(organism.genes)
+                    self._save_organism(organism)
                     logger.info('Success! Generation {} passed with:\n{}'.format(
                         generation,
                         yaml.dump(
@@ -211,3 +246,97 @@ class GeneticEntityTester():
             if 'pass' in result:
                 return result['pass'].get('id', -1)
         return -1
+
+@attr.s()
+class AsyncGeneticEntityTester(GeneticEntityTester):
+    """An asynchronous version of the GeneticEntityTester."""
+
+    max_running = attr.ib(default=25)
+
+    def __attrs_post_init__(self):
+        """Setup our remaining helpers"""
+        super().__attrs_post_init__()
+        self.max_running = asyncio.Semaphore(self.max_running)
+        self._results = asyncio.Queue()
+
+    async def _run_org(self, organism, mock=False):
+        async with self.max_running:
+            task = super()._genes_to_task(organism.genes)
+            # execute the test task
+            try:
+                result = await self.loop.run_in_executor(
+                    # default exectutor, function, args
+                    None, task.execute, mock)
+            except Exception as err:
+                logger.error(err)
+                result = "Unhandled Exception"
+            # judge the results and pass those points to the organism
+        organism.points = super()._judge(result, mock)
+        logger.debug('Tested {}'.format(organism))
+        await self._results.put((result, organism))
+
+    async def test_population(self, mock=False):
+        """Run the tests passed in and return the log file"""
+        tasks = [
+            asyncio.ensure_future(self._run_org(org, mock))
+            for org in self._population.population
+        ]
+        await asyncio.wait(tasks)
+
+    def run(self, mock=False, save_only_passed=False):
+        """Run a population attempting to maximize desired results"""
+        if not self._method_inst:
+            logger.warning('{} does not have the method {}'.format(
+                self.entity, self.method
+            ))
+            return None
+
+        # Create our population
+        try:
+            self._population = genetics.Population(
+                gene_base=[self._create_gene_base()],
+                population_count=self.population_count,
+                generator_function=self._create_gene_base,
+                gene_length=1,
+                mutate=False,
+                rev_pop_sort=not self.seek_bad
+            )
+        except Exception as err:
+            logger.error('Unable to create a population due to: {}'.format(
+                err
+            ))
+            return False
+        # Attempt to continue where we left off, if desired
+        if not self.fresh:
+            best = super()._load_test()
+            if best:
+                self._population.population[0].genes = best
+
+        for generation in range(self.max_generations):
+            self.loop = asyncio.new_event_loop()
+            self._results.empty()
+            self.loop.run_until_complete(self.test_population(mock))
+            self.loop.close()
+            while self._results.qsize() > 0:
+                result, organism = self._results.get_nowait()
+                if 'pass' in result and not mock and not self.seek_bad:
+                    logger.info('Success! Generation {} passed with:\n{}'.format(
+                        generation,
+                        yaml.dump(
+                            attr.asdict(
+                                super()._genes_to_task(organism.genes),
+                                filter=lambda attr, value: attr.name != 'config'
+                            ),
+                            default_flow_style=False)
+                    ))
+                    super()._save_organism(organism)
+                    return True
+
+            self._population.sort_population()
+            logger.info('Generation {} best: {}'.format(
+                generation, self._population.population[0]))
+            # breed the current generation and iterate
+            self._population.breed_population()
+        if not mock and not save_only_passed:
+            # save the current best in the config
+            super()._save_organism(self._population.population[0])
