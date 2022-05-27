@@ -106,7 +106,7 @@ class GeneticEntityTester():
         test_file = self.config.base_dir.joinpath(
             'data/genetic_tests/{}.yaml'.format(self.entity))
         test_file.parent.mkdir(parents=True, exist_ok=True)
-        tests = yaml.load(test_file.open('r+')) or {}
+        tests = yaml.load(test_file.open('r+'), Loader=yaml.FullLoader) or {}
         tests[self.test_name] = attr.asdict(
             self._genes_to_task(test.genes),
             filter=lambda attr, value: attr.name != 'config')
@@ -118,7 +118,7 @@ class GeneticEntityTester():
             'data/genetic_tests/{}.yaml'.format(self.entity))
         test_file.parent.mkdir(parents=True, exist_ok=True)
         if test_file.exists():
-            tests = yaml.load(test_file.open('r')) or {}
+            tests = yaml.load(test_file.open('r'), Loader=yaml.FullLoader) or {}
             best = tests.get(self.test_name, False)
             if best:
                 # convert the yaml format to a gene list

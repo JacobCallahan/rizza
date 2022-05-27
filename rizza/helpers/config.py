@@ -106,7 +106,7 @@ class Config():
                         logger.error(e)
                 elif '.yml' in str(infile) or '.yaml' in str(infile):
                     try:
-                        loaded_cfg = yaml.load(tempf)
+                        loaded_cfg = yaml.load(tempf, Loader=yaml.FullLoader)
                     except Exception as e:
                         logger.error(e)
         except Exception as e:

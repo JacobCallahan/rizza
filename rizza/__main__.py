@@ -61,7 +61,7 @@ class Main(object):
             help="One or more methods to exclude from brute force testing. "
             "(e.g. 'raw search read get payload')")
         parser.add_argument(
-            "--async", action="store_true",
+            "--run-async", action="store_true",
             help="Run tests asynchronously.")
         parser.add_argument(
             "--async-limit", type=int, default=100,
@@ -78,7 +78,7 @@ class Main(object):
         )
 
         if args.import_path:
-            if args.async:
+            if args.run_async:
                 AsyncTaskManager(args.import_path, args.async_limit).run_tests()
             else:
                 tests = TaskManager.import_tasks(Path(args.import_path))
@@ -98,7 +98,7 @@ class Main(object):
                     TaskManager.export_tasks(
                         path=Path(args.output_path), tasks=tests)
                 else:
-                    if args.async:
+                    if args.run_async:
                         AsyncTaskManager(tests, args.async_limit).run_tests()
                     else:
                         TaskManager.run_tests(tests=tests)
@@ -136,7 +136,7 @@ class Main(object):
             "--disable-recursion", action="store_true",
             help="Stop rizza from attempting to create required entities.")
         parser.add_argument(
-            "--async", action="store_true",
+            "--run-async", action="store_true",
             help="Run tests asynchronously.")
         parser.add_argument(
             "--async-limit", type=int, default=100,
@@ -159,14 +159,14 @@ class Main(object):
                 path=self.conf.base_dir.joinpath('logs/prune.log'),
                 level='debug' if args.debug else None
             )
-            if args.async and args.entity == 'All':
+            if args.run_async and args.entity == 'All':
                 prune.async_genetic_prune(self.conf, args.entity, args.async_limit)
             else:
                 prune.genetic_prune(self.conf, args.entity)
         elif args.entity == 'All':
             genetic_tester.run_all_entities(
                 debug=args.debug,
-                async_mode=args.async,
+                async_mode=args.run_async,
                 config=self.conf,
                 entity=args.entity,
                 method=args.method,
@@ -180,7 +180,7 @@ class Main(object):
                 fresh=args.fresh,
                 max_running=args.async_limit
             )
-        elif args.async:
+        elif args.run_async:
             gtester = genetic_tester.AsyncGeneticEntityTester(
                 config=self.conf,
                 entity=args.entity,

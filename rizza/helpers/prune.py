@@ -20,7 +20,7 @@ def genetic_prune(conf, entity='All'):
         to_remove = []
         if test_file.exists() and test_file.stat().st_size > 10:
             logger.debug('Beginning tests for {}'.format(entity))
-            tests = yaml.load(test_file.open('r'))
+            tests = yaml.load(test_file.open('r'), Loader=yaml.FullLoader)
             for test in tests:
                 ent, method, mode = test.split(' ')
                 if mode == 'positive':
