@@ -28,7 +28,7 @@ class Config():
     def __attrs_post_init__(self):
         """Load in config files, then environment variables"""
         # first, attempt to load nailgun config
-        self.base_dir = Path.home().joinpath('rizza')
+        self.base_dir = Path(os.getcwd())
         # we want to always use current directory as base for tests
         if 'tests' in str(self.cfg_file):
             self.cfg_file = Path().joinpath(self.cfg_file)

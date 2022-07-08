@@ -19,12 +19,12 @@ Brute Force Testing
 Rizza's most basic, and time consuming, operation is a brute force method of testing entities. It will try every combination of an entity's methods, fields, arguments, and available input methods.
 It is highly recommended that you limit the scope of this kind of test with --max-field, --max-inputs, and the exclude options available. An unlimited test can easily generate trillions of combinations and will likely take longer than the lifecycle of your product.
 -i, --input and -o, --output use relative paths only.
-**Note:** Using --async will load all tests into memory, so it is advised to limit the numbers to tests by either breaking them up into separate files, or limiting the scope of the methods and fields.
+**Note:** Using --run-async will load all tests into memory, so it is advised to limit the numbers to tests by either breaking them up into separate files, or limiting the scope of the methods and fields.
 
 **Examples:**
 ```rizza brute --help```
 
-```rizza brute -e Product -o tester.txt --max-fields 2 --max-inputs 1 --method-exclude raw search read get payload --async```
+```rizza brute -e Product -o tester.txt --max-fields 2 --max-inputs 1 --method-exclude raw search read get payload --run-async```
 
 ```rizza brute -i 10tests.txt -l stdout```
 
@@ -39,7 +39,7 @@ Once a test completes, it is saved in ~/rizza/data/genetic_tests/
 
 ```rizza genetic -e Organization -m create```
 
-```rizza genetic -e Organization -m create --max-generations 100 --seek-bad --fresh --disable-recursion --async```
+```rizza genetic -e Organization -m create --max-generations 100 --seek-bad --fresh --disable-recursion --run-async```
 
 Configuration
 -------------
