@@ -15,7 +15,7 @@ from rizza.task_manager import AsyncTaskManager, TaskManager
 
 
 class Main(object):
-    """This main class will allow for better nested arguments (git stlye)"""
+    """This main class will allow for better nested arguments (git style)"""
     def __init__(self):
         self.conf = Config()
         parser = argparse.ArgumentParser()
