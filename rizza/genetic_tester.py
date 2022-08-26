@@ -4,7 +4,6 @@ import asyncio
 import random
 import yaml
 import attr
-from pathlib import Path
 from logzero import logger
 from rizza import entity_tester
 from rizza.helpers import genetics
@@ -138,11 +137,20 @@ class GeneticEntityTester():
     def _judge(self, result=None, mock=False):
         """Return a numeric value for the given result"""
         if mock:  # Used for testing the class without true execution
-            return random.randint(-1000,1000)
-        total = 0
+            return random.randint(-1000, 1000)
+        total = -1
+
+        # todo yake - keyword extraction with probabilities to all words, the lower the probability the more important word,
+        # match whether some word in error message is one of the fields if give it higher probability so it would be probably chosen
+
         for criteria, points in self.config.RIZZA['GENETICS']['CRITERIA'].items():
             if dict_search(criteria, result):
                 total += points
+                if total == -1:
+                    total += 1
+        if total == -1:
+            logger.warning(f'Result was not found between criteria, therefore not judged {result},'
+                           'please add criteria to config.py')
         return total
 
     def _genes_to_task(self, genes):
@@ -159,19 +167,53 @@ class GeneticEntityTester():
 
     def _create_gene_base(self):
         """Create a valid genetic base to evolve on"""
+        # todo if dependencies allowed, firstly try to create without dependencies, for first x epochs
+
+        # if dependencies are disabled remove fields that require dependencies
+        if self.disable_dependencies:
+            indict = self._etester.fields
+            for exclusion in ['OneToOneField', 'OneToManyField']:
+                indict = {
+                    field: nailgun_obj
+                    for field, nailgun_obj in indict.items()
+                    if exclusion != nailgun_obj.__class__.__name__
+                       and exclusion not in field
+                }
+            self._etester.fields = indict
+
         # create a list of fields
-        fields = [
-            random.choice(list(self._etester.fields))
-            for _ in range(random.randint(0, len(list(self._etester.fields))))
+        # choose randomly how many fields is used for the gene
+        fields = random.sample(list(self._etester.fields), random.randint(0, len(list(self._etester.fields))))
+        nailgun_fields = [self._etester.fields[field].__class__.__name__ for field in fields]
+
+        # TODO list field, dict field, float field, OneToManyField, OneToOneField
+        # if the nailgun field is:
+        # list choose a nailgun field, and random number and fill the list
+        # dict is the same but use unique string as a key and random field as the value
+        # float - create a float value as we do in nailgun
+        # if there is oneToOneField the field has to be created first
+        # if there is oneToManyField
+        # example {"location_ids": ["2","381"]}
+
+        # match random inputs to the previous list of fields based on the field type
+        field_inputs = [
+            self.config.RIZZA['GENETICS']['NAILGUN FIELDS TYPE MAPPING'][nailgun_field]
+            for nailgun_field in nailgun_fields
         ]
-        # match random inputs to the previous list of fields
-        inputs = list(entity_tester.EntityTester.pull_input_methods())
-        field_inputs = [random.choice(inputs) for _ in range(len(fields))]
+
         # create a list of random method inputs
         args = entity_tester.EntityTester.pull_args(self._method_inst)
         args = [random.choice(args) for _ in range(random.randint(0, len(args)))]
         # match random inputs to the previous list of args
-        arg_inputs = [random.choice(inputs) for _ in range(len(args))]
+        if 'create_missing' in args:
+            len_args = len(args) -1
+        else:
+            len_args = len(args)
+        arg_inputs = random.sample(
+            list(self.config.RIZZA['GENETICS']['NAILGUN FIELDS TYPE MAPPING'].values()), len_args
+        )
+
+        # for nailgun the types match can be created, fauxfactory type gen_date matches with
         return [fields, field_inputs, args, arg_inputs]
 
     def run(self, mock=False, save_only_passed=False):

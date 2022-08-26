@@ -112,7 +112,9 @@ class EntityTester(object):
             mdict = {name: method
                      for name, method in methods
                      if "__" not in name}
-        return dictionary_exclusion(mdict, exclude)
+            return dictionary_exclusion(mdict, exclude)
+        else:
+            raise ValueError('Please specify the entity')
 
     @staticmethod
     def pull_fields(entity=None, exclude=None):
