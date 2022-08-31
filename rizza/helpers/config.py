@@ -105,12 +105,11 @@ class Config():
                 'ListField': 'list',
                 'MACAddressField': 'gen_mac',
                 'NetmaskField': 'gen_netmask',
+                'OneToManyField': '1:N',
+                'OneToOneField': '1:1',
                 'StringField': 'gen_string',
                 'URLField': 'gen_url',
             }
-            # todo
-            # OneToManyField
-            # OneToOneField
 
     def load_config(self, cfg_file=None):
         """Attempt to load in config files"""

@@ -34,6 +34,7 @@ class Population(object):
         Random mutation is then given a chance to change the child.
 
         """
+        # TODO now with nested lists and dict this requires rework
         new_gene_list = []
         if gene_list1 and gene_list2:
             # If we have nested genes, then recursively breed them
@@ -101,7 +102,8 @@ class Organism(object):
     points = attr.ib(default=0)
 
     def generate_genes(self, gen_func=None, count=None):
-        """Randomly sort the genes to provide different combinations."""
+        """Randomly sort the genes to provide different combinations,
+        keep the order between field and field inputs and arg and arg inputs """
         if gen_func and count:
             if count == 1:
                 self.genes = gen_func()
@@ -109,9 +111,13 @@ class Organism(object):
                 self.genes = [gen_func() for _ in range(count)]
         if isinstance(self.genes[0], list):
             self.genes = self.genes[:]
-            for i in range(len(self.genes)):
-                self.genes[i] = self.genes[i][:]
-                random.shuffle(self.genes[i])
+            for i in range(0, len(self.genes), 2):
+                assert len(self.genes[i][:]) == len(self.genes[i+1][:])
+                tmp = list(zip(self.genes[i][:], self.genes[i + 1][:]))
+                # if tmp is empty there is nothing to unpack, therefore no need for shuffle
+                if len(tmp) != 0:
+                    random.shuffle(tmp)
+                    self.genes[i][:], self.genes[i + 1][:] = zip(*tmp)
         else:
             self.genes = self.genes[:]
             random.shuffle(self.genes)

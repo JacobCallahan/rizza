@@ -7,6 +7,7 @@ import attr
 from logzero import logger
 from rizza import entity_tester
 from rizza.helpers import genetics
+from rizza.helpers.inputs import additional_nailgun_fields_setup
 from rizza.helpers.misc import dict_search
 
 
@@ -140,8 +141,7 @@ class GeneticEntityTester():
             return random.randint(-1000, 1000)
         total = -1
 
-        # todo yake - keyword extraction with probabilities to all words, the lower the probability the more important word,
-        # match whether some word in error message is one of the fields if give it higher probability so it would be probably chosen
+
 
         for criteria, points in self.config.RIZZA['GENETICS']['CRITERIA'].items():
             if dict_search(criteria, result):
@@ -186,20 +186,20 @@ class GeneticEntityTester():
         fields = random.sample(list(self._etester.fields), random.randint(0, len(list(self._etester.fields))))
         nailgun_fields = [self._etester.fields[field].__class__.__name__ for field in fields]
 
-        # TODO list field, dict field, float field, OneToManyField, OneToOneField
-        # if the nailgun field is:
-        # list choose a nailgun field, and random number and fill the list
-        # dict is the same but use unique string as a key and random field as the value
-        # float - create a float value as we do in nailgun
+        # TODO append additional nailgun fields setup method to use
+        # OneToManyField, OneToOneField respectively their values 1:N and 1:1
         # if there is oneToOneField the field has to be created first
         # if there is oneToManyField
         # example {"location_ids": ["2","381"]}
+        # for both 1:1 and 1:N the genetic known and unknown functions in inputs.py can be used
 
         # match random inputs to the previous list of fields based on the field type
         field_inputs = [
             self.config.RIZZA['GENETICS']['NAILGUN FIELDS TYPE MAPPING'][nailgun_field]
             for nailgun_field in nailgun_fields
         ]
+
+        field_inputs = additional_nailgun_fields_setup(field_inputs, list(set(field_inputs)))
 
         # create a list of random method inputs
         args = entity_tester.EntityTester.pull_args(self._method_inst)

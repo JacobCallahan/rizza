@@ -1,5 +1,5 @@
 from fauxfactory import *
-
+import random
 
 def gen_string():
     """Overriden since it doesn't apply."""
@@ -35,6 +35,31 @@ def puppet_url(choice=1):
         2: 'https://omaciel.fedorapeople.org/'
     }
     return choices.get(choice, choices[1])
+
+def additional_nailgun_fields_setup(fields, types):
+    """Configurate Nailgun field post creation to match more complex fields.
+    if the nailgun field is:
+        list -- choose a nailgun field, choose random type and fill the list
+        dict -- is the same but use unique string as a key and random field as the value
+        float -- create a float value as we do in nailgun
+    recursively check whether there is not a new list or dict
+    """
+    new_fields = []
+    for field in fields.values() if isinstance(fields, dict) else fields:
+        if field == 'float':
+            new_fields.append(random.random() * 10000)
+        elif field == 'list':
+            choices = [random.choice(types)] * random.randint(0, 2)
+            new_field = additional_nailgun_fields_setup(choices, types)
+            new_fields.append(new_field)
+        elif field == 'dict':
+            # TODO string has to be unique once it's created
+            choices = {'gen_string': random.choice(types)}
+            new_field = additional_nailgun_fields_setup(choices, types)
+            new_fields.append(new_field)
+        else:
+            new_fields.append(field)
+    return new_fields
 
 
 def genetic_known(config, entity='Organization'):
