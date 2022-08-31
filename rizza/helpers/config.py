@@ -28,14 +28,14 @@ class Config():
     def __attrs_post_init__(self):
         """Load in config files, then environment variables"""
         # first, attempt to load nailgun config
-        self.base_dir = Path.home().joinpath('rizza')
+        self.base_dir = Path(os.getcwd())
         # we want to always use current directory as base for tests
         if 'tests' in str(self.cfg_file):
             self.cfg_file = Path().joinpath(self.cfg_file)
         elif self.cfg_file != str(Path(self.cfg_file).absolute()):
-            self.cfg_file = self.base_dir.joinpath(self.cfg_file)
-        self.RIZZA['CONFILE'] = self.cfg_file
+            self.cfg_file = str(self.base_dir.joinpath(self.cfg_file))
         self.load_config()
+        self.RIZZA['CONFILE'] = self.cfg_file
         self._load_environment_vars()
 
     def _load_environment_vars(self):
@@ -92,6 +92,24 @@ class Config():
                 'BadValueError': -500,
                 'TypeError': -200
             }
+        if not self.RIZZA['GENETICS'].get('NAILGUN FIELDS TYPE MAPPING'):
+            self.RIZZA['GENETICS']['NAILGUN FIELDS TYPE MAPPING'] = {
+                'BooleanField': 'gen_boolean',
+                'DateField': 'gen_date',
+                'DateTimeField': 'gen_datetime',
+                'DictField': 'dict',
+                'EmailField': 'gen_email',
+                'FloatField': 'float',
+                'IntegerField': 'gen_integer',
+                'IPAddressField': 'gen_ipaddr',
+                'ListField': 'list',
+                'MACAddressField': 'gen_mac',
+                'NetmaskField': 'gen_netmask',
+                'OneToManyField': '1:N',
+                'OneToOneField': '1:1',
+                'StringField': 'gen_string',
+                'URLField': 'gen_url',
+            }
 
     def load_config(self, cfg_file=None):
         """Attempt to load in config files"""
@@ -124,7 +142,7 @@ class Config():
             self.RIZZA['LOG PATH'] = self.RIZZA.get(
                 'LOG PATH', 'logs/rizza.log')
             if self.RIZZA['LOG PATH'] != str(Path(self.RIZZA['LOG PATH']).absolute()):
-                self.RIZZA['LOG PATH'] = self.base_dir.joinpath(self.RIZZA['LOG PATH'])
+                self.RIZZA['LOG PATH'] = str(self.base_dir.joinpath(self.RIZZA['LOG PATH']))
             self.RIZZA['LOG LEVEL'] = self.RIZZA.get(
                 'LOG LEVEL', 'info')
 

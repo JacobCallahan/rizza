@@ -112,7 +112,9 @@ class EntityTester(object):
             mdict = {name: method
                      for name, method in methods
                      if "__" not in name}
-        return dictionary_exclusion(mdict, exclude)
+            return dictionary_exclusion(mdict, exclude)
+        else:
+            raise ValueError('Please specify the entity')
 
     @staticmethod
     def pull_fields(entity=None, exclude=None):
@@ -173,8 +175,11 @@ class EntityTestTask(object):
         imeths = EntityTester.pull_input_methods()
         cut_list = []
         for field, inpt in self.field_dict.items():
-            self.field_dict[field] = form_input(
-                inpt, imeths, field, self.config)
+            self.field_dict[field] = self.form_input_decapsulation(
+                field=field,
+                inpt=inpt,
+                imeths=imeths,
+            )
             if self.field_dict[field] == '~':
                 cut_list.append(field)
         for entry in cut_list:
@@ -197,6 +202,39 @@ class EntityTestTask(object):
             handled = handle_exception(e)
             logger.debug('fail: {}'.format(handled))
             return {'fail': handled}
+
+    def form_input_decapsulation(self, **kwargs):
+        if isinstance(kwargs['inpt'], list):
+            if not kwargs['inpt']:
+                return []
+            lst = []
+            for inpt in kwargs['inpt']:
+                if isinstance(inpt, list):
+                    lst.append([
+                        self.form_input_decapsulation(
+                        field=kwargs['field'],
+                        inpt=inpt,
+                        imeths=kwargs['imeths'],
+                        )
+                    ])
+                else:
+                    if inpt == 'url':
+                        print(inpt)
+                    lst.append(form_input(
+                        inpt,
+                        kwargs['imeths'],
+                        kwargs['field'],
+                        self.config
+                    ))
+            return lst
+        # TODO dict
+        else:
+            return form_input(
+                kwargs['inpt'],
+                kwargs['imeths'],
+                kwargs['field'],
+                self.config
+            )
 
 
 @attr.s(slots=True)

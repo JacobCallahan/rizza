@@ -61,7 +61,7 @@ def dictionary_exclusion(indict=None, exclude=None):
 def handle_exception(exception=None):
     """Translate an exception into a usable format."""
     if exception.__class__.__name__ in dir(entity_mixins):
-        return {'nailgun': exception.__class__.__name__}
+        return {'nailgun': {'class': exception.__class__.__name__, 'args': exception.args}}
     elif isinstance(exception, HTTPError):
         resp = {}
         for name, contents in exception.__dict__.items():
@@ -119,7 +119,7 @@ def field_to_entity(field):
 
 
 def get_default_type(func):
-    """Return the type of the first default argument for a function or None"""
+    """Return the type of the first default argument for a function or empty list"""
     parameters = signature(func).parameters
     types = []
     for key in parameters.keys():
