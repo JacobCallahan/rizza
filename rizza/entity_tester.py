@@ -1,18 +1,23 @@
-# -*- encoding: utf-8 -*-
 """A module that provides utilities to test Nailgun entities."""
 import inspect
+
 import attr
 from logzero import logger
 from nailgun import entities
-from rizza.helpers.genetics import Population
-from rizza.helpers import inputs, config
-from rizza.helpers.misc import (combination_list, product_list,
-                                handle_exception, map_field_inputs,
-                                dictionary_exclusion, form_input)
+
+from rizza.helpers import inputs
+from rizza.helpers.misc import (
+    combination_list,
+    dictionary_exclusion,
+    form_input,
+    handle_exception,
+    map_field_inputs,
+    product_list,
+)
 
 
 @attr.s()
-class EntityTester(object):
+class EntityTester:
     """This class implements methods useful in testing Nailgun entities.
 
     :param entity: Nailgun entity, or entity name. (Case sensitive)
@@ -36,7 +41,7 @@ class EntityTester(object):
             elif entity in elist.values():
                 self.entity = entity
             else:
-                raise Exception("Entity {} not found.".format(self.entity))
+                raise Exception(f"Entity {self.entity} not found.")
 
         if self.entity:
             self.fields = self.pull_fields(self.entity, exclude=field_exclude)
@@ -46,8 +51,7 @@ class EntityTester(object):
         """Run an ehaustive test of the entity."""
         if not task:
             return None
-        points = 0
-        return points
+        return 0
 
     def brute_force(self, max_fields=None, max_inputs=None):
         """Create a generator of tests for all entity permutations.
@@ -59,8 +63,7 @@ class EntityTester(object):
         """
         entity_name = self.entity.__name__
 
-        input_list = self.pull_input_methods(
-            exclude=['long', 'genetic']).keys()
+        input_list = self.pull_input_methods(exclude=["long", "genetic"]).keys()
         if not max_inputs:
             max_inputs = len(input_list)
         input_combos = product_list(input_list, max_inputs)
@@ -69,11 +72,12 @@ class EntityTester(object):
         for method in self.methods:
             method_combo_dict[method] = []
             args = self.pull_args(self.methods[method])
-            method_combo_dict[method].extend(map_field_inputs(
-                args, product_list(
-                    input_list,
-                    max_inputs if max_inputs <= len(args) else len(args)
-                )))
+            method_combo_dict[method].extend(
+                map_field_inputs(
+                    args,
+                    product_list(input_list, max_inputs if max_inputs <= len(args) else len(args)),
+                )
+            )
 
         field_combo_list = combination_list(self.fields, max_fields)
         for combo in field_combo_list:
@@ -83,19 +87,17 @@ class EntityTester(object):
                 for method in method_combo_dict:
                     for mc_dict in method_combo_dict[method]:
                         yield EntityTestTask(
-                            entity=entity_name,
-                            method=method,
-                            field_dict=fi_dict,
-                            arg_dict=mc_dict
+                            entity=entity_name, method=method, field_dict=fi_dict, arg_dict=mc_dict
                         )
 
     @staticmethod
     def pull_entities(exclude=None):
         """Return a dictionary of nailgun entities."""
-        edict = {entity: entities.__dict__[entity]
-                 for entity in dir(entities)
-                 if entity[0] != "_" and entity[0].istitle() and
-                 not entity.isupper()}
+        edict = {
+            entity: entities.__dict__[entity]
+            for entity in dir(entities)
+            if entity[0] != "_" and entity[0].istitle() and not entity.isupper()
+        }
         return dictionary_exclusion(edict, exclude)
 
     @staticmethod
@@ -103,15 +105,12 @@ class EntityTester(object):
         """Return a dictionary of methods belonging to an entity."""
         if entity:
             try:
-                methods = inspect.getmembers(
-                    entity(), predicate=inspect.ismethod)
+                methods = inspect.getmembers(entity(), predicate=inspect.ismethod)
             except TypeError as err:
                 # Failed nailgun's _check_for_value
-                logger.error('Unable to init {} due to {}'.format(entity, err))
+                logger.error(f"Unable to init {entity} due to {err}")
                 return None
-            mdict = {name: method
-                     for name, method in methods
-                     if "__" not in name}
+            mdict = {name: method for name, method in methods if "__" not in name}
         return dictionary_exclusion(mdict, exclude)
 
     @staticmethod
@@ -123,7 +122,7 @@ class EntityTester(object):
                 fields = entity_inst._fields
             except Exception as err:
                 # Failed nailgun's _check_for_value or entity doens't have _fields
-                logger.error('Unable to init {} due to {}'.format(entity, err))
+                logger.error(f"Unable to init {entity} due to {err}")
                 return None
             return dictionary_exclusion(fields, exclude)
 
@@ -131,20 +130,17 @@ class EntityTester(object):
     def pull_args(method=None):
         """Return a list of args belonging to an entity's method."""
         if method:
-            return [arg for arg in inspect.signature(method).parameters.keys()
-                    if arg != 'self']
+            return [arg for arg in inspect.signature(method).parameters if arg != "self"]
 
     @staticmethod
     def pull_input_methods(exclude=None):
         """Return a dictionary of input methods."""
-        indict = {meth: inputs.__dict__[meth]
-                  for meth in dir(inputs)
-                  if "__" not in meth}
+        indict = {meth: inputs.__dict__[meth] for meth in dir(inputs) if "__" not in meth}
         return dictionary_exclusion(indict, exclude)
 
 
 @attr.s(slots=True)
-class EntityTestTask(object):
+class EntityTestTask:
     """An Entity test task object that stores relevant information.
 
     :params entity: A string matching an entity class.
@@ -173,34 +169,38 @@ class EntityTestTask(object):
         imeths = EntityTester.pull_input_methods()
         cut_list = []
         for field, inpt in self.field_dict.items():
-            self.field_dict[field] = form_input(
-                inpt, imeths, field, self.config)
-            if self.field_dict[field] == '~':
+            self.field_dict[field] = form_input(inpt, imeths, field, self.config)
+            if self.field_dict[field] == "~":
                 cut_list.append(field)
         for entry in cut_list:
             del self.field_dict[entry]
 
-        self.arg_dict = {arg: imeths.get(inpt, lambda: inpt)() for arg, inpt
-                         in self.arg_dict.items() if not 'genetic' in inpt}
+        self.arg_dict = {
+            arg: imeths.get(inpt, lambda inpt=inpt: inpt)()
+            for arg, inpt in self.arg_dict.items()
+            if "genetic" not in inpt
+        }
 
-        logger.debug('Executing: {} {} with fields: {} and args {}'.format(
-            self.entity, self.method, self.field_dict, self.arg_dict
-        ))
+        logger.debug(
+            "Executing: {} {} with fields: {} and args {}".format(
+                self.entity, self.method, self.field_dict, self.arg_dict
+            )
+        )
         try:
             entity = EntityTester.pull_entities()[self.entity](**self.field_dict)
             result = getattr(entity, self.method)(**self.arg_dict)
             if not isinstance(result, dict):
                 result = result.to_json_dict()
-            logger.debug('pass: {}'.format(result))
-            return {'pass': result}
+            logger.debug(f"pass: {result}")
+            return {"pass": result}
         except Exception as e:
             handled = handle_exception(e)
-            logger.debug('fail: {}'.format(handled))
-            return {'fail': handled}
+            logger.debug(f"fail: {handled}")
+            return {"fail": handled}
 
 
 @attr.s(slots=True)
-class MaIMap(object):
+class MaIMap:
     """Provide a map between method fields and input functions.
 
     :params fields: A dict of fields (field name, field).
@@ -215,32 +215,30 @@ class MaIMap(object):
     def __attrs_post_init__(self):
         """Setup the instance."""
         if not self.mai_map:
-            self.mai_map = [
-                [None for x in self.x_labels]
-                for y in self.y_labels
-            ]
+            self.mai_map = [[None for x in self.x_labels] for y in self.y_labels]
 
     def point(self, x, y, value=None):
         """Map must be initialized before using this method."""
         if value:
             self.mai_map[x][y] = value
         return {
-            'x label': self.x_labels[x],
-            'y label': self.y_labels[y],
-            'value': self.mai_map[x][y]
+            "x label": self.x_labels[x],
+            "y label": self.y_labels[y],
+            "value": self.mai_map[x][y],
         }
 
     def find(self, needle=None):
         """Search the map for the specified value then return
-           a list of points where that value exists.
+        a list of points where that value exists.
         """
-        results = []
-        if needle:
-            for x in range(len(self.mai_map)):
-                for y in range(len(self.mai_map[x])):
-                    if str(needle) in str(self.mai_map[x][y]):
-                        results.append((x, y))
-        return results
+        if not needle:
+            return []
+        return [
+            (x, y)
+            for x in range(len(self.mai_map))
+            for y in range(len(self.mai_map[x]))
+            if str(needle) in str(self.mai_map[x][y])
+        ]
 
     @property
     def x_labels(self):
