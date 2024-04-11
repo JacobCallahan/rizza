@@ -1,18 +1,20 @@
-# -*- encoding: utf-8 -*-
 """Genetic algorithm base classes."""
-import random
 from collections import deque
+import random
+
 import attr
 
+MAX_POP = 200
+
+
 @attr.s()
-class Population(object):
+class Population:
     """This class is the controller for the population of Orgamisms."""
 
-    gene_base = attr.ib(
-        validator=attr.validators.instance_of(list), cmp=False, repr=False)
+    gene_base = attr.ib(validator=attr.validators.instance_of(list), cmp=False, repr=False)
     population_count = attr.ib(default=20)
     population = attr.ib(default=attr.Factory(list), cmp=False)
-    top_scores = attr.ib(default=deque(maxlen=200), repr=False)
+    top_scores = attr.ib(default=deque(maxlen=MAX_POP), repr=False)
     rev_pop_sort = attr.ib(default=False, cmp=False, repr=False)
     generator_function = attr.ib(default=False, cmp=False, repr=False)
     gene_length = attr.ib(default=False, cmp=False, repr=False)
@@ -23,8 +25,7 @@ class Population(object):
         self.population = []
         for _ in range(self.population_count):
             org = Organism(genes=self.gene_base[:])
-            org.generate_genes(
-                gen_func=self.generator_function, count=self.gene_length)
+            org.generate_genes(gen_func=self.generator_function, count=self.gene_length)
             self.population.append(org)
 
     def _breed_pair(self, gene_list1, gene_list2):
@@ -38,7 +39,7 @@ class Population(object):
         if gene_list1 and gene_list2:
             # If we have nested genes, then recursively breed them
             if isinstance(gene_list1[0], list):
-                for list1, list2 in zip(gene_list1, gene_list2):
+                for list1, list2 in zip(gene_list1, gene_list2, strict=True):
                     new_gene_list.append(self._breed_pair(list1, list2))
             else:
                 crossover = random.randint(0, len(gene_list1))
@@ -49,16 +50,14 @@ class Population(object):
         return new_gene_list
 
     def breed_population(self, pool_percentage=50):
-        """"Cross breed the population with only the top percentage.
+        """ "Cross breed the population with only the top percentage.
 
         :param pool_percentage: Percentage defines primary breeder cutoff.
 
         """
         # Create the breeding order. Those on top get more iterations.
         self.sort_population()
-        breeders = self.population[
-            :int(self.population_count * (float(pool_percentage) / 100))
-        ]
+        breeders = self.population[: int(self.population_count * (float(pool_percentage) / 100))]
         self.top_scores.append(breeders[0].points)
         # Add in some random members of the population
         while self.population_count > len(breeders):
@@ -67,7 +66,7 @@ class Population(object):
         next_generation = [Organism(genes=breeders[0].genes[:])]  # keep our best
         # Randomly mutate our existing population
         if self.mutate:
-            if len(self.top_scores) == 200 and self.top_scores[0] == self.top_scores[-1]:
+            if len(self.top_scores) == MAX_POP and self.top_scores[0] == self.top_scores[-1]:
                 mutation_chance = 0.9
             else:
                 mutation_chance = 0.3
@@ -79,22 +78,21 @@ class Population(object):
             org1 = random.choice(breeders)
             org2 = random.choice(breeders)
             if org1 != org2:
-                    new_org = Organism(genes=self._breed_pair(org1.genes, org2.genes))
+                new_org = Organism(genes=self._breed_pair(org1.genes, org2.genes))
             else:  # Avoid potential stagnation by introducing a new organism
                 new_org = Organism(genes=self.gene_base[:])
-                new_org.generate_genes(
-                    gen_func=self.generator_function, count=self.gene_length)
+                new_org.generate_genes(gen_func=self.generator_function, count=self.gene_length)
             next_generation.append(new_org)
         self.population = next_generation
 
     def sort_population(self, reverse=None):
         """Sort the population by the number of points they have."""
         reverse = reverse or self.rev_pop_sort
-        self.population = sorted(
-            self.population, key=lambda org: org.points, reverse=reverse)
+        self.population = sorted(self.population, key=lambda org: org.points, reverse=reverse)
+
 
 @attr.s(slots=True)
-class Organism(object):
+class Organism:
     """The is the actor class that is the target of evolution."""
 
     genes = attr.ib(validator=attr.validators.instance_of(list), cmp=False)
@@ -121,22 +119,21 @@ class Organism(object):
         if isinstance(self.genes[0], list):
             for i in range(len(self.genes)):
                 if random.random() < mutation_chance:
-                        gene1 = random.choice(range(len(self.genes[i])))
-                        gene2 = random.choice(range(len(self.genes[i])))
-                        self.genes[i][gene1], self.genes[i][gene2] = (
-                            self.genes[i][gene2], self.genes[i][gene1])
+                    gene1 = random.choice(range(len(self.genes[i])))
+                    gene2 = random.choice(range(len(self.genes[i])))
+                    self.genes[i][gene1], self.genes[i][gene2] = (
+                        self.genes[i][gene2],
+                        self.genes[i][gene1],
+                    )
                 else:  # Or we'll mutate to have a new/duplicate value introduced
-                    self.genes[i][
-                        random.randint(0, len(self.genes[i]) - 1)
-                    ] = random.choice(self.genes[i])
-        else:
+                    self.genes[i][random.randint(0, len(self.genes[i]) - 1)] = random.choice(
+                        self.genes[i]
+                    )
+        else:  # noqa: PLR5501
             if random.random() < mutation_chance:
-                    gene1 = random.choice(range(len(self.genes)))
-                    gene2 = random.choice(range(len(self.genes)))
-                    self.genes[gene1], self.genes[gene2] = (
-                        self.genes[gene2], self.genes[gene1])
+                gene1 = random.choice(range(len(self.genes)))
+                gene2 = random.choice(range(len(self.genes)))
+                self.genes[gene1], self.genes[gene2] = (self.genes[gene2], self.genes[gene1])
             else:  # Or we'll mutate to have a new/duplicate value introduced
                 genes = gene_base or self.genes
-                self.genes[
-                    random.randint(0, len(self.genes) - 1)
-                ] = random.choice(genes[:])
+                self.genes[random.randint(0, len(self.genes) - 1)] = random.choice(genes[:])

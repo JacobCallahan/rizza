@@ -1,26 +1,28 @@
-# -*- encoding: utf-8 -*-
 """Tests for rizza.helpers.config."""
-import os
-import pytest
+from pathlib import Path
+
 from rizza.helpers import config
 
 BASE_VALUE = "TEST"
 BASE_LIST = [1, 2, 3]
-BASE_DICT = {'a': 1, 'b': 2, 'c': 3}
+BASE_DICT = {"a": 1, "b": 2, "c": 3}
+
 
 def test_positive_create_config():
     """Simply create a config class and check it pulled the default nailgun"""
     test_config = config.Config()
     assert test_config.NAILGUN
 
+
 def test_positive_load_config():
     """Load the test config and assert the bits are in place"""
-    test_config = config.Config(cfg_file='tests/data/test_config.yaml')
-    assert test_config.RIZZA['value'] == BASE_VALUE
-    assert test_config.RIZZA['list'] == BASE_LIST
-    assert test_config.RIZZA['dict'] == BASE_DICT
-    assert test_config.NAILGUN['SATUSER'] == 'test_user'
-    assert test_config.NAILGUN['VERIFY'] is False
+    test_config = config.Config(cfg_file="tests/data/test_config.yaml")
+    assert test_config.RIZZA["value"] == BASE_VALUE
+    assert test_config.RIZZA["list"] == BASE_LIST
+    assert test_config.RIZZA["dict"] == BASE_DICT
+    assert test_config.NAILGUN["SATUSER"] == "test_user"
+    assert test_config.NAILGUN["VERIFY"] is False
+
 
 def test_positive_save_config():
     """Verify that we are able to create and save a custom config
@@ -34,22 +36,23 @@ def test_positive_save_config():
     Verify: All saved components match their initial values
     """
     base_config = config.Config()
-    base_config.RIZZA['value'] = BASE_VALUE
-    base_config.RIZZA['list'] = BASE_LIST
-    base_config.RIZZA['dict'] = BASE_DICT
-    base_config.save_config('tests/data/base_config.yaml')
-    new_config = config.Config(cfg_file='tests/data/base_config.yaml')
-    assert new_config.RIZZA['value'] == base_config.RIZZA['value']
-    assert new_config.RIZZA['list'] == base_config.RIZZA['list']
-    assert new_config.RIZZA['dict'] == base_config.RIZZA['dict']
-    os.remove('tests/data/base_config.yaml')
+    base_config.RIZZA["value"] = BASE_VALUE
+    base_config.RIZZA["list"] = BASE_LIST
+    base_config.RIZZA["dict"] = BASE_DICT
+    base_config.save_config("tests/data/base_config.yaml")
+    new_config = config.Config(cfg_file="tests/data/base_config.yaml")
+    assert new_config.RIZZA["value"] == base_config.RIZZA["value"]
+    assert new_config.RIZZA["list"] == base_config.RIZZA["list"]
+    assert new_config.RIZZA["dict"] == base_config.RIZZA["dict"]
+    Path("tests/data/base_config.yaml").unlink()
+
 
 def test_positive_convert_config():
     """Load a yaml config, save it to json, reimport to verify contents"""
-    base_config = config.Config(cfg_file='tests/data/test_config.yaml')
-    base_config.save_config('tests/data/base_config.json')
-    new_config = config.Config(cfg_file='tests/data/base_config.json')
-    assert new_config.RIZZA['value'] == base_config.RIZZA['value']
-    assert new_config.RIZZA['list'] == base_config.RIZZA['list']
-    assert new_config.RIZZA['dict'] == base_config.RIZZA['dict']
-    os.remove('tests/data/base_config.json')
+    base_config = config.Config(cfg_file="tests/data/test_config.yaml")
+    base_config.save_config("tests/data/base_config.json")
+    new_config = config.Config(cfg_file="tests/data/base_config.json")
+    assert new_config.RIZZA["value"] == base_config.RIZZA["value"]
+    assert new_config.RIZZA["list"] == base_config.RIZZA["list"]
+    assert new_config.RIZZA["dict"] == base_config.RIZZA["dict"]
+    Path("tests/data/base_config.json").unlink()

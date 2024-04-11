@@ -1,43 +1,44 @@
-# -*- encoding: utf-8 -*-
 """A module that provides utilities to test entities via genetic algorithms"""
 import asyncio
 import random
-import yaml
+
 import attr
-from pathlib import Path
 from logzero import logger
+import yaml
+
 from rizza import entity_tester
 from rizza.helpers import genetics
 from rizza.helpers.misc import dict_search
 
 
 def run_all_entities(**kwargs):
-    """Iterate through all known entities and attempt to """
-    debug = kwargs.pop('debug')
-    async_mode = kwargs.pop('async_mode')
+    """Iterate through all known entities and attempt to"""
+    debug = kwargs.pop("debug")
+    async_mode = kwargs.pop("async_mode")
     if not async_mode:
-        del kwargs['max_running']
+        del kwargs["max_running"]
 
     for entity in list(entity_tester.EntityTester.pull_entities()):
-        kwargs['entity'] = entity
+        kwargs["entity"] = entity
         try:
             if async_mode:
                 gtester = AsyncGeneticEntityTester(**kwargs)
             else:
                 gtester = GeneticEntityTester(**kwargs)
-        except:
+        except Exception as err:
+            logger.warning(f"Unable to create a tester for {entity} due to: {err}")
             continue
-        kwargs['config'].init_logger(
-            path=kwargs['config'].base_dir.joinpath(
-                'logs/genetic/{}.log'.format(gtester.test_name)),
-            level='debug' if debug else None
+        kwargs["config"].init_logger(
+            path=kwargs["config"].base_dir.joinpath(f"logs/genetic/{gtester.test_name}.log"),
+            level="debug" if debug else None,
         )
-        logger.info(f'Starting tests for {entity}')
+        logger.info(f"Starting tests for {entity}")
         gtester.run()
-    logger.info('Finished testing all entities!')
+    logger.info("Finished testing all entities!")
+
 
 @attr.s()
-class GeneticEntityTester():
+class GeneticEntityTester:
     """Class that handles all aspects of genetic algorithm-based testing
 
     :param config: Required. A config class instance.
@@ -65,32 +66,29 @@ class GeneticEntityTester():
     def __attrs_post_init__(self):
         """Perform more complex class initialzation"""
         # Entity method positive/negative
-        self.test_name = '{} {} {}'.format(
-            self.entity, self.method,
-            'negative' if self.seek_bad else 'positive'
+        self.test_name = "{} {} {}".format(
+            self.entity, self.method, "negative" if self.seek_bad else "positive"
         )
         # If for some reason, the genetic config wasn't populated
-        if not self.config.RIZZA.get('GENETICS', None):
+        if not self.config.RIZZA.get("GENETICS", None):
             # try to load it again
             self.config._load_genetics()
         if not self.population_count:
-            self.population_count = (
-                self.config.RIZZA['GENETICS']['POPULATION COUNT'])
+            self.population_count = self.config.RIZZA["GENETICS"]["POPULATION COUNT"]
         if not self.max_generations:
-            self.max_generations = (
-                self.config.RIZZA['GENETICS']['MAX GENERATIONS'])
+            self.max_generations = self.config.RIZZA["GENETICS"]["MAX GENERATIONS"]
 
         # cli overrides
         if self.max_recursive_generations:
-            self.config.RIZZA['GENETICS'][
-                'MAX RECURSIVE GENERATIONS'] = self.max_recursive_generations
+            self.config.RIZZA["GENETICS"][
+                "MAX RECURSIVE GENERATIONS"
+            ] = self.max_recursive_generations
         if self.disable_dependencies:
-            self.config.RIZZA['GENETICS']['ALLOW DEPENDENCIES'] = False
+            self.config.RIZZA["GENETICS"]["ALLOW DEPENDENCIES"] = False
         if self.disable_recursion:
-            self.config.RIZZA['GENETICS']['ALLOW RECURSION'] = False
+            self.config.RIZZA["GENETICS"]["ALLOW RECURSION"] = False
         if self.max_recursive_depth:
-            self.config.RIZZA['GENETICS'][
-                'MAX RECURSIVE DEPTH'] = self.max_recursive_depth
+            self.config.RIZZA["GENETICS"]["MAX RECURSIVE DEPTH"] = self.max_recursive_depth
 
         self._entity_inst = entity_tester.EntityTester.pull_entities()[self.entity]
         meths = entity_tester.EntityTester.pull_methods(self._entity_inst)
@@ -103,31 +101,29 @@ class GeneticEntityTester():
 
     def _save_organism(self, test):
         """Save the test organism to the appropriate file in data/genetic_tests"""
-        test_file = self.config.base_dir.joinpath(
-            'data/genetic_tests/{}.yaml'.format(self.entity))
+        test_file = self.config.base_dir.joinpath(f"data/genetic_tests/{self.entity}.yaml")
         test_file.parent.mkdir(parents=True, exist_ok=True)
-        tests = yaml.load(test_file.open('r+'), Loader=yaml.FullLoader) or {}
+        tests = yaml.load(test_file.open("r+"), Loader=yaml.FullLoader) or {}
         tests[self.test_name] = attr.asdict(
-            self._genes_to_task(test.genes),
-            filter=lambda attr, value: attr.name != 'config')
-        yaml.dump(tests, test_file.open('w+'), default_flow_style=False)
+            self._genes_to_task(test.genes), filter=lambda attr, value: attr.name != "config"
+        )
+        yaml.dump(tests, test_file.open("w+"), default_flow_style=False)
 
     def _load_test(self):
         """Load in the last test stored in data/genetic_tests, if any exist"""
-        test_file = self.config.base_dir.joinpath(
-            'data/genetic_tests/{}.yaml'.format(self.entity))
+        test_file = self.config.base_dir.joinpath(f"data/genetic_tests/{self.entity}.yaml")
         test_file.parent.mkdir(parents=True, exist_ok=True)
         if test_file.exists():
-            tests = yaml.load(test_file.open('r'), Loader=yaml.FullLoader) or {}
+            tests = yaml.load(test_file.open("r"), Loader=yaml.FullLoader) or {}
             best = tests.get(self.test_name, False)
             if best:
                 # convert the yaml format to a gene list
                 fields, field_inputs = ([], [])
-                for field, inpt in best['field_dict'].items():
+                for field, inpt in best["field_dict"].items():
                     fields.append(field)
                     field_inputs.append(inpt)
                 args, arg_inputs = ([], [])
-                for arg, inpt in best['arg_dict'].items():
+                for arg, inpt in best["arg_dict"].items():
                     args.append(arg)
                     arg_inputs.append(inpt)
                 return [fields, field_inputs, args, arg_inputs]
@@ -138,23 +134,23 @@ class GeneticEntityTester():
     def _judge(self, result=None, mock=False):
         """Return a numeric value for the given result"""
         if mock:  # Used for testing the class without true execution
-            return random.randint(-1000,1000)
+            return random.randint(-1000, 1000)
         total = 0
-        for criteria, points in self.config.RIZZA['GENETICS']['CRITERIA'].items():
+        for criteria, points in self.config.RIZZA["GENETICS"]["CRITERIA"].items():
             if dict_search(criteria, result):
                 total += points
         return total
 
     def _genes_to_task(self, genes):
         """Turn a gene list into an Entity Test Task"""
-        field_dict = {field: inpt for (field, inpt) in zip(genes[0], genes[1])}
-        arg_dict = {arg: inpt for (arg, inpt) in zip(genes[2], genes[3])}
+        field_dict = {field: inpt for (field, inpt) in zip(genes[0], genes[1], strict=True)}
+        arg_dict = {arg: inpt for (arg, inpt) in zip(genes[2], genes[3], strict=True)}
         return entity_tester.EntityTestTask(
             entity=self.entity,
             method=self.method,
             field_dict=field_dict,
             arg_dict=arg_dict,
-            config=self.config
+            config=self.config,
         )
 
     def _create_gene_base(self):
@@ -177,9 +173,7 @@ class GeneticEntityTester():
     def run(self, mock=False, save_only_passed=False):
         """Run a population attempting to maximize desired results"""
         if not self._method_inst:
-            logger.warning('{} does not have the method {}'.format(
-                self.entity, self.method
-            ))
+            logger.warning(f"{self.entity} does not have the method {self.method}")
             return None
 
         # Create our population
@@ -190,12 +184,10 @@ class GeneticEntityTester():
                 generator_function=self._create_gene_base,
                 gene_length=1,
                 mutate=False,
-                rev_pop_sort=not self.seek_bad
+                rev_pop_sort=not self.seek_bad,
             )
         except Exception as err:
-            logger.error('Unable to create a population due to: {}'.format(
-                err
-            ))
+            logger.error(f"Unable to create a population due to: {err}")
             return False
         # Attempt to continue where we left off, if desired
         if not self.fresh:
@@ -205,29 +197,31 @@ class GeneticEntityTester():
 
         for generation in range(self.max_generations):
             for organism in population.population:
-                logger.debug('Testing {}'.format(organism))
+                logger.debug(f"Testing {organism}")
                 # create an entity_tester. from the organism
                 task = self._genes_to_task(organism.genes)
                 # execute the test task
                 result = task.execute(mock)
-                if 'pass' in result and not mock and not self.seek_bad:
+                if "pass" in result and not mock and not self.seek_bad:
                     self._save_organism(organism)
-                    logger.info('Success! Generation {} passed with:\n{}'.format(
-                        generation,
-                        yaml.dump(
-                            attr.asdict(
-                                self._genes_to_task(organism.genes),
-                                filter=lambda attr, value: attr.name != 'config'
+                    logger.info(
+                        "Success! Generation {} passed with:\n{}".format(
+                            generation,
+                            yaml.dump(
+                                attr.asdict(
+                                    self._genes_to_task(organism.genes),
+                                    filter=lambda attr, value: attr.name != "config",
+                                ),
+                                default_flow_style=False,
                             ),
-                            default_flow_style=False)
-                    ))
+                        )
+                    )
                     return True
                 # judge the results and pass those points to the organism
                 organism.points = self._judge(result, mock)
 
             population.sort_population()
-            logger.info('Generation {} best: {}'.format(
-                generation, population.population[0]))
+            logger.info(f"Generation {generation} best: {population.population[0]}")
             # breed the current generation and iterate
             population.breed_population()
         if not mock and not save_only_passed:
@@ -236,16 +230,17 @@ class GeneticEntityTester():
 
     def run_best(self):
         """Pull the best saved test, if any, run it, and return the id"""
-        self.config.RIZZA['GENETICS']['ALLOW RECURSION'] = False
-        self.config.RIZZA['GENETICS']['MAX GENERATIONS'] = 1
+        self.config.RIZZA["GENETICS"]["ALLOW RECURSION"] = False
+        self.config.RIZZA["GENETICS"]["MAX GENERATIONS"] = 1
         test = self._load_test()
         if test:
             test = self._genes_to_task(test)
-            logger.info('Creating {}...'.format(self.entity))
+            logger.info(f"Creating {self.entity}...")
             result = test.execute()
-            if 'pass' in result:
-                return result['pass'].get('id', -1)
+            if "pass" in result:
+                return result["pass"].get("id", -1)
         return -1
+
 
 @attr.s()
 class AsyncGeneticEntityTester(GeneticEntityTester):
@@ -266,29 +261,29 @@ class AsyncGeneticEntityTester(GeneticEntityTester):
             try:
                 result = await self.loop.run_in_executor(
                     # default exectutor, function, args
-                    None, task.execute, mock)
+                    None,
+                    task.execute,
+                    mock,
+                )
             except Exception as err:
                 logger.error(err)
                 result = "Unhandled Exception"
             # judge the results and pass those points to the organism
         organism.points = super()._judge(result, mock)
-        logger.debug('Tested {}'.format(organism))
+        logger.debug(f"Tested {organism}")
         await self._results.put((result, organism))
 
     async def test_population(self, mock=False):
         """Run the tests passed in and return the log file"""
         tasks = [
-            asyncio.ensure_future(self._run_org(org, mock))
-            for org in self._population.population
+            asyncio.ensure_future(self._run_org(org, mock)) for org in self._population.population
         ]
         await asyncio.wait(tasks)
 
     def run(self, mock=False, save_only_passed=False):
         """Run a population attempting to maximize desired results"""
         if not self._method_inst:
-            logger.warning('{} does not have the method {}'.format(
-                self.entity, self.method
-            ))
+            logger.warning(f"{self.entity} does not have the method {self.method}")
             return None
 
         # Create our population
@@ -299,12 +294,10 @@ class AsyncGeneticEntityTester(GeneticEntityTester):
                 generator_function=self._create_gene_base,
                 gene_length=1,
                 mutate=False,
-                rev_pop_sort=not self.seek_bad
+                rev_pop_sort=not self.seek_bad,
             )
         except Exception as err:
-            logger.error('Unable to create a population due to: {}'.format(
-                err
-            ))
+            logger.error(f"Unable to create a population due to: {err}")
             return False
         # Attempt to continue where we left off, if desired
         if not self.fresh:
@@ -319,22 +312,24 @@ class AsyncGeneticEntityTester(GeneticEntityTester):
             self.loop.close()
             while self._results.qsize() > 0:
                 result, organism = self._results.get_nowait()
-                if 'pass' in result and not mock and not self.seek_bad:
-                    logger.info('Success! Generation {} passed with:\n{}'.format(
-                        generation,
-                        yaml.dump(
-                            attr.asdict(
-                                super()._genes_to_task(organism.genes),
-                                filter=lambda attr, value: attr.name != 'config'
+                if "pass" in result and not mock and not self.seek_bad:
+                    logger.info(
+                        "Success! Generation {} passed with:\n{}".format(
+                            generation,
+                            yaml.dump(
+                                attr.asdict(
+                                    super()._genes_to_task(organism.genes),
+                                    filter=lambda attr, value: attr.name != "config",
+                                ),
+                                default_flow_style=False,
                             ),
-                            default_flow_style=False)
-                    ))
+                        )
+                    )
                     super()._save_organism(organism)
                     return True
 
             self._population.sort_population()
-            logger.info('Generation {} best: {}'.format(
-                generation, self._population.population[0]))
+            logger.info(f"Generation {generation} best: {self._population.population[0]}")
             # breed the current generation and iterate
             self._population.breed_population()
         if not mock and not save_only_passed:

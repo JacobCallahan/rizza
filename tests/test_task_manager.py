@@ -1,21 +1,20 @@
-# -*- encoding: utf-8 -*-
 """Tests for rizza.task_manager."""
-import os
 import json
-import pytest
+from pathlib import Path
+
 from rizza import task_manager
 from rizza.helpers import logger
 
-IMPORT_FILE = 'tests/data/example.txt'
-EXPORT_FILE = 'tests/data/temp_export.txt'
-LOG_FILE = 'logs/temp.log'
+IMPORT_FILE = "tests/data/example.txt"
+EXPORT_FILE = "tests/data/temp_export.txt"
+LOG_FILE = "logs/temp.log"
 
 
 def test_positive_import_tasks():
     """Import tasks from a pre-created file and validate contents."""
     tasks = task_manager.TaskManager.import_tasks(IMPORT_FILE)
     task = next(tasks)
-    assert task.__class__.__name__ == 'EntityTestTask'
+    assert task.__class__.__name__ == "EntityTestTask"
     assert isinstance(task.entity, str)
     assert isinstance(task.method, str)
     assert isinstance(task.field_dict, dict)
@@ -30,18 +29,19 @@ def test_positive_export_tasks():
     tasks = task_manager.TaskManager.import_tasks(IMPORT_FILE)
     exported = task_manager.TaskManager.import_tasks(EXPORT_FILE)
     assert list(tasks) == list(exported)
-    os.remove(EXPORT_FILE)
+    Path(EXPORT_FILE).unlink()
 
 
 def test_positive_run_tests():
     """Run mock tests and validate the generated results."""
     tasks = task_manager.TaskManager.import_tasks(IMPORT_FILE)
-    logger.setup_logzero(LOG_FILE, 'info')
+    logger.setup_logzero(LOG_FILE, "info")
     task_manager.TaskManager.run_tests(tasks, True)
-    with open(LOG_FILE) as test_file:
+    log_path = Path(LOG_FILE)
+    with log_path.open() as test_file:
         for test in test_file:
-            split_test = test.split('~')
+            split_test = test.split("~")
             # The test data just before being ran must match 'after'
-            if len(split_test) == 3:
+            if len(split_test) == 3:  # noqa: PLR2004 (no magic numbers)
                 assert json.loads(split_test[1]) == json.loads(split_test[2])
-    os.remove(LOG_FILE)
+    log_path.unlink()
