@@ -18,7 +18,7 @@ def run_all_entities(**kwargs):
     if not async_mode:
         del kwargs["max_running"]
 
-    # FIXME: Nailgun removed - pull_entities() will return an empty list.
+    # pull_entities() will return an empty list due to Nailgun removal.
     # This loop will likely not execute.
     pulled_entities = entity_tester.EntityTester.pull_entities()
     if not pulled_entities:
@@ -95,8 +95,8 @@ class GeneticEntityTester:
         if self.max_recursive_depth:
             self.config.RIZZA["GENETICS"]["MAX RECURSIVE DEPTH"] = self.max_recursive_depth
 
-        # FIXME: Nailgun removed - pull_entities() and pull_methods() are stubbed.
-        # These lines will likely fail or not behave as intended.
+        # pull_entities() and pull_methods() are stubbed due to Nailgun removal.
+        # These lines handle the resulting behavior.
         pulled_entities = entity_tester.EntityTester.pull_entities()
         if self.entity in pulled_entities:
             self._entity_inst = pulled_entities[self.entity]
@@ -173,7 +173,7 @@ class GeneticEntityTester:
     def _create_gene_base(self):
         """Create a valid genetic base to evolve on"""
         # create a list of fields
-        # FIXME: Nailgun removed - self._etester.fields will likely be empty.
+        # self._etester.fields will likely be empty due to Nailgun removal.
         if not self._etester.fields:
             logger.warning(f"GeneticTester: No fields available for entity '{self.entity}' (nailgun removed).")
             fields = []
@@ -186,7 +186,7 @@ class GeneticEntityTester:
         inputs = list(entity_tester.EntityTester.pull_input_methods())
         field_inputs = [random.choice(inputs) for _ in range(len(fields))]
         # create a list of random method inputs
-        # FIXME: Nailgun removed - self._method_inst might be None or pull_args might return empty.
+        # self._method_inst might be None or pull_args might return empty due to Nailgun removal.
         if self._method_inst:
             args_available = entity_tester.EntityTester.pull_args(self._method_inst)
             if args_available:

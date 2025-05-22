@@ -3,7 +3,6 @@ import inspect
 
 import attr
 from logzero import logger
-# from nailgun import entities # FIXME: Nailgun removed
 
 from rizza.helpers import inputs
 from rizza.helpers.misc import (
@@ -93,47 +92,22 @@ class EntityTester:
     @staticmethod
     def pull_entities(exclude=None):
         """Return a dictionary of nailgun entities."""
-        # FIXME: Nailgun removed. Returning empty dict.
         logger.warning("Nailgun entities are not available. Returning empty list.")
         return {}
-        # edict = {
-        #     entity: entities.__dict__[entity]
-        #     for entity in dir(entities)
-        #     if entity[0] != "_" and entity[0].istitle() and not entity.isupper()
-        # }
-        # return dictionary_exclusion(edict, exclude)
 
     @staticmethod
     def pull_methods(entity=None, exclude=None):
         """Return a dictionary of methods belonging to an entity."""
-        # FIXME: Nailgun removed. Returning empty dict.
         if entity:
             logger.warning(f"Nailgun entity {entity} methods are not available. Returning empty list.")
-            # try:
-            #     methods = inspect.getmembers(entity(), predicate=inspect.ismethod)
-            # except TypeError as err:
-            #     # Failed nailgun's _check_for_value
-            #     logger.error(f"Unable to init {entity} due to {err}")
-            #     return None
-            # mdict = {name: method for name, method in methods if "__" not in name}
-            # return dictionary_exclusion(mdict, exclude)
         return {}
 
 
     @staticmethod
     def pull_fields(entity=None, exclude=None):
         """Return a dictionary of fields belonging to an entity's method."""
-        # FIXME: Nailgun removed. Returning empty dict.
         if entity:
             logger.warning(f"Nailgun entity {entity} fields are not available. Returning empty list.")
-        #     try:
-        #         entity_inst = entity()
-        #         fields = entity_inst._fields
-        #     except Exception as err:
-        #         # Failed nailgun's _check_for_value or entity doens't have _fields
-        #         logger.error(f"Unable to init {entity} due to {err}")
-        #         return None
-        #     return dictionary_exclusion(fields, exclude)
         return {}
 
     @staticmethod
@@ -196,19 +170,12 @@ class EntityTestTask:
                 self.entity, self.method, self.field_dict, self.arg_dict
             )
         )
-        # FIXME: Nailgun removed. This part will likely not work as expected.
         pulled_entities = EntityTester.pull_entities()
         if not pulled_entities or self.entity not in pulled_entities:
             logger.error(f"Entity {self.entity} not found or nailgun entities unavailable.")
             return {"fail": f"Entity {self.entity} not found or nailgun entities unavailable."}
 
         try:
-            # entity_instance = pulled_entities[self.entity](**self.field_dict)
-            # result = getattr(entity_instance, self.method)(**self.arg_dict)
-            # if not isinstance(result, dict):
-            #     result = result.to_json_dict()
-            # logger.debug(f"pass: {result}")
-            # return {"pass": result}
             logger.warning("Nailgun entity execution skipped.")
             return {"skipped": "Nailgun entity execution skipped due to nailgun removal."}
         except Exception as e:

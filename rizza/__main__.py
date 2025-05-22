@@ -287,55 +287,8 @@ def genetic(
 @cli.group()
 @click.pass_context
 def config(ctx):
-    """Manage rizza configurations.""" # FIXME: Nailgun docstring part removed
+    """Manage rizza configurations."""
     pass # ctx.obj (Config) is already set from the main cli group
-
-# FIXME: Nailgun subcommand removed
-# @config.command()
-# @click.option("-u", "--user", type=str, help="Username")
-# @click.option("-p", "--password", type=str, help="Password")
-# @click.option(
-#     "-t",
-#     "--target",
-#     type=str,
-#     help="The target Satellite's URL (https://server.domain.com)",
-# )
-# @click.option(
-#     "--verify",
-#     is_flag=True, # Default is False, so this flag enables it
-#     help="Enable SSL verification (default: disabled in code, this flag enables).",
-# )
-# @click.option(
-#     "--label", type=str, default="default", show_default=True, help="The configuration label to use."
-# )
-# @click.option("--path", type=click.Path(), help="The configuration file path to use.")
-# @click.option("--clear", is_flag=True, help="Clear existing configuration.")
-# @click.option("--show", is_flag=True, help="Show existing configuration.")
-# @click.pass_context
-# def nailgun(ctx, user, password, target, verify, label, path, clear, show):
-#     """Configure nailgun settings."""
-#     conf = ctx.obj
-#     args_dict = {
-#         "project": "nailgun",
-#         "user": user,
-#         "password": password,
-#         "target": target,
-#         "verify": verify, # Note: original argparse default was False for store_true
-#         "label": label,
-#         "path": path,
-#         "clear": clear,
-#         "show": show,
-#     }
-#     conf.load_cli_args(type('Args', (), args_dict))
-
-#     if show:
-#         # conf.yaml_print(conf.NAILGUN) # FIXME: NAILGUN attribute removed from conf
-#         # yaml_string = yaml.dump(conf.NAILGUN)
-#         # rprint(Syntax(yaml_string, "yaml", theme="native", line_numbers=True))
-#         rprint("Nailgun configuration display has been removed.")
-#     if clear:
-#         # conf.clear_nailgun() # FIXME: clear_nailgun method removed from conf
-#         rprint("Nailgun configuration clearing has been removed.")
 
 @config.command()
 @click.option("--path", type=click.Path(), help="The configuration file path to use.")
