@@ -18,7 +18,12 @@ def run_all_entities(**kwargs):
     if not async_mode:
         del kwargs["max_running"]
 
-    for entity in list(entity_tester.EntityTester.pull_entities()):
+    # FIXME: Nailgun removed - pull_entities() will return an empty list.
+    # This loop will likely not execute.
+    pulled_entities = entity_tester.EntityTester.pull_entities()
+    if not pulled_entities:
+        logger.warning("Genetic tests: No entities found to test (nailgun removed).")
+    for entity in list(pulled_entities):
         kwargs["entity"] = entity
         try:
             if async_mode:
@@ -90,14 +95,26 @@ class GeneticEntityTester:
         if self.max_recursive_depth:
             self.config.RIZZA["GENETICS"]["MAX RECURSIVE DEPTH"] = self.max_recursive_depth
 
-        self._entity_inst = entity_tester.EntityTester.pull_entities()[self.entity]
-        meths = entity_tester.EntityTester.pull_methods(self._entity_inst)
-        if meths:
-            self._method_inst = meths.get(self.method, None)
+        # FIXME: Nailgun removed - pull_entities() and pull_methods() are stubbed.
+        # These lines will likely fail or not behave as intended.
+        pulled_entities = entity_tester.EntityTester.pull_entities()
+        if self.entity in pulled_entities:
+            self._entity_inst = pulled_entities[self.entity]
+            meths = entity_tester.EntityTester.pull_methods(self._entity_inst)
+            if meths:
+                self._method_inst = meths.get(self.method, None)
+            else:
+                self._method_inst = None
         else:
+            logger.warning(
+                f"GeneticTester: Entity '{self.entity}' not found (nailgun removed). "
+                "Genetic tests for this entity may not function."
+            )
+            self._entity_inst = None
             self._method_inst = None
+
         self._etester = entity_tester.EntityTester(self.entity)
-        self._etester.prep()
+        self._etester.prep() # prep will also find no entities due to stubbing
 
     def _save_organism(self, test):
         """Save the test organism to the appropriate file in data/genetic_tests"""
@@ -156,24 +173,39 @@ class GeneticEntityTester:
     def _create_gene_base(self):
         """Create a valid genetic base to evolve on"""
         # create a list of fields
-        fields = [
-            random.choice(list(self._etester.fields))
-            for _ in range(random.randint(0, len(list(self._etester.fields))))
-        ]
+        # FIXME: Nailgun removed - self._etester.fields will likely be empty.
+        if not self._etester.fields:
+            logger.warning(f"GeneticTester: No fields available for entity '{self.entity}' (nailgun removed).")
+            fields = []
+        else:
+            fields = [
+                random.choice(list(self._etester.fields))
+                for _ in range(random.randint(0, len(list(self._etester.fields))))
+            ]
         # match random inputs to the previous list of fields
         inputs = list(entity_tester.EntityTester.pull_input_methods())
         field_inputs = [random.choice(inputs) for _ in range(len(fields))]
         # create a list of random method inputs
-        args = entity_tester.EntityTester.pull_args(self._method_inst)
-        args = [random.choice(args) for _ in range(random.randint(0, len(args)))]
+        # FIXME: Nailgun removed - self._method_inst might be None or pull_args might return empty.
+        if self._method_inst:
+            args_available = entity_tester.EntityTester.pull_args(self._method_inst)
+            if args_available:
+                args = [random.choice(args_available) for _ in range(random.randint(0, len(args_available)))]
+            else:
+                args = []
+        else:
+            args = []
         # match random inputs to the previous list of args
         arg_inputs = [random.choice(inputs) for _ in range(len(args))]
         return [fields, field_inputs, args, arg_inputs]
 
     def run(self, mock=False, save_only_passed=False):
         """Run a population attempting to maximize desired results"""
-        if not self._method_inst:
-            logger.warning(f"{self.entity} does not have the method {self.method}")
+        if not self._method_inst: # This check is now more critical
+            logger.warning(
+                f"GeneticTester: Method instance for '{self.method}' on entity '{self.entity}' not found "
+                "(nailgun removed). Cannot run genetic test."
+            )
             return None
 
         # Create our population

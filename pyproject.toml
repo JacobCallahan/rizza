@@ -25,6 +25,8 @@ dependencies = [
     "fauxfactory",
     "logzero",
     "pyyaml",
+    "rich-click>=1.7.0,<2.0.0",
+    "rich>=13.0.0,<14.0.0",
 ]
 dynamic = ["version"]
 

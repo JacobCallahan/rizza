@@ -29,5 +29,5 @@ def setup_logzero(path, level):
     logzero.logfile(path, loglevel=level, maxBytes=1e9, backupCount=3, formatter=formatter)
 
 
-logging.getLogger("nailgun").setLevel(logging.ERROR)
+# logging.getLogger("nailgun").setLevel(logging.ERROR) # FIXME: Nailgun removed
 setup_logzero(Path.home().joinpath("logs/rizza.log"), "info")
