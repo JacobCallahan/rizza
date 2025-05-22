@@ -99,15 +99,18 @@ class EntityTester:
     def pull_methods(entity=None, exclude=None):
         """Return a dictionary of methods belonging to an entity."""
         if entity:
-            logger.warning(f"Nailgun entity {entity} methods are not available. Returning empty list.")
+            logger.warning(
+                f"Nailgun entity {entity} methods are not available. Returning empty list."
+            )
         return {}
-
 
     @staticmethod
     def pull_fields(entity=None, exclude=None):
         """Return a dictionary of fields belonging to an entity's method."""
         if entity:
-            logger.warning(f"Nailgun entity {entity} fields are not available. Returning empty list.")
+            logger.warning(
+                f"Nailgun entity {entity} fields are not available. Returning empty list."
+            )
         return {}
 
     @staticmethod

@@ -1,4 +1,5 @@
 """A module that provides utilities to test entities via genetic algorithms"""
+
 import asyncio
 import random
 
@@ -114,7 +115,7 @@ class GeneticEntityTester:
             self._method_inst = None
 
         self._etester = entity_tester.EntityTester(self.entity)
-        self._etester.prep() # prep will also find no entities due to stubbing
+        self._etester.prep()  # prep will also find no entities due to stubbing
 
     def _save_organism(self, test):
         """Save the test organism to the appropriate file in data/genetic_tests"""
@@ -175,7 +176,9 @@ class GeneticEntityTester:
         # create a list of fields
         # self._etester.fields will likely be empty due to Nailgun removal.
         if not self._etester.fields:
-            logger.warning(f"GeneticTester: No fields available for entity '{self.entity}' (nailgun removed).")
+            logger.warning(
+                f"GeneticTester: No fields available for entity '{self.entity}' (nailgun removed)."
+            )
             fields = []
         else:
             fields = [
@@ -190,7 +193,10 @@ class GeneticEntityTester:
         if self._method_inst:
             args_available = entity_tester.EntityTester.pull_args(self._method_inst)
             if args_available:
-                args = [random.choice(args_available) for _ in range(random.randint(0, len(args_available)))]
+                args = [
+                    random.choice(args_available)
+                    for _ in range(random.randint(0, len(args_available)))
+                ]
             else:
                 args = []
         else:
@@ -201,10 +207,10 @@ class GeneticEntityTester:
 
     def run(self, mock=False, save_only_passed=False):
         """Run a population attempting to maximize desired results"""
-        if not self._method_inst: # This check is now more critical
+        if not self._method_inst:  # This check is now more critical
             logger.warning(
-                f"GeneticTester: Method instance for '{self.method}' on entity '{self.entity}' not found "
-                "(nailgun removed). Cannot run genetic test."
+                f"GeneticTester: Method instance for '{self.method}' on entity '{self.entity}'"
+                " not found (nailgun removed). Cannot run genetic test."
             )
             return None
 
@@ -236,18 +242,17 @@ class GeneticEntityTester:
                 result = task.execute(mock)
                 if "pass" in result and not mock and not self.seek_bad:
                     self._save_organism(organism)
-                    logger.info(
-                        "Success! Generation {} passed with:\n{}".format(
-                            generation,
-                            yaml.dump(
-                                attr.asdict(
-                                    self._genes_to_task(organism.genes),
-                                    filter=lambda attr, value: attr.name != "config",
-                                ),
-                                default_flow_style=False,
+                    success_msg = "Success! Generation {} passed with:\n{}".format(
+                        generation,
+                        yaml.dump(
+                            attr.asdict(
+                                super()._genes_to_task(organism.genes),
+                                filter=lambda attr, value: attr.name != "config",
                             ),
-                        )
+                            default_flow_style=False,
+                        ),
                     )
+                    logger.info(success_msg)
                     return True
                 # judge the results and pass those points to the organism
                 organism.points = self._judge(result, mock)
@@ -357,7 +362,9 @@ class AsyncGeneticEntityTester(GeneticEntityTester):
                             ),
                         )
                     )
-                    super()._save_organism(organism)
+                    super()._save_organism(
+                        organism
+                    )  # TODO: This might be redundant if already saved above
                     return True
 
             self._population.sort_population()

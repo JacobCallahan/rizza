@@ -1,6 +1,5 @@
 """Project configuration helpers."""
 import json
-import os
 from pathlib import Path
 
 import attr
@@ -38,7 +37,7 @@ class Config:
 
     def _load_environment_vars(self):
         """Load in key variables that may exist in the environment"""
-        pass # Nailgun related environment variables removed
+        pass  # Nailgun related environment variables removed
 
     def _load_genetics(self):
         """Ensure the genetic algorithm vars are populated."""
@@ -75,7 +74,7 @@ class Config:
         """Attempt to load in config files"""
         infile = Path(cfg_file or self.cfg_file).resolve()
         logger.info(f"Loading config from {infile.absolute()}")
-        loaded_cfg = {} # Default to empty config
+        loaded_cfg = {}  # Default to empty config
         try:
             if infile.exists():
                 if infile.suffix == ".json":
@@ -83,11 +82,19 @@ class Config:
                 elif infile.suffix in [".yml", ".yaml"]:
                     loaded_cfg = yaml.load(infile.read_text(), Loader=yaml.FullLoader)
             else:
-                logger.warning(f"Configuration file {infile.absolute()} not found. Using default/empty config.")
+                logger.warning(
+                    f"Config file {infile.absolute()} not found. Using default/empty config."
+                )
         except FileNotFoundError:
-            logger.warning(f"Configuration file {infile.absolute()} not found (FileNotFoundError). Using default/empty config.")
+            logger.warning(
+                f"Config file {infile.absolute()} not found (FileNotFoundError). "
+                "Using default/empty config."
+            )
         except Exception as e:
-            logger.error(f"Error loading configuration file {infile.absolute()}: {e}. Using default/empty config.")
+            logger.error(
+                f"Error loading config file {infile.absolute()}: {e}. "
+                "Using default/empty config."
+            )
 
         if "RIZZA" in loaded_cfg:
             self.RIZZA = loaded_cfg["RIZZA"]
@@ -97,7 +104,7 @@ class Config:
                 self.RIZZA["LOG PATH"] = self.base_dir.joinpath(self.RIZZA["LOG PATH"])
             self.RIZZA["LOG LEVEL"] = self.RIZZA.get("LOG LEVEL", "info")
 
-    def load_cli_args(self, args=None, command=False):  # noqa: PLR0912 (too many branches)
+    def load_cli_args(self, args=None, command=False):  # (too many branches)
         """Pull in any relevant settings from argparse"""
         if "project" in dir(args):
             if args.project == "rizza":
@@ -119,21 +126,29 @@ class Config:
         # Use this list to remove entire class variables
         exclude_list = ["base_dir", "cfg_file"]
         # Use this list to remove unserializable objects
-        sanitized = [] # Nailgun related sanitization removed
+        sanitized = []  # Nailgun related sanitization removed
         # Remove each of those objects
         for item in sanitized:
             # This block might need adjustment if NAILGUN was a direct attribute vs. a dict key
-            if item["component"] in self.__dict__ and isinstance(self.__dict__[item["component"]], dict) and \
-               self.__dict__[item["component"]].get(item["name"], None):
+            if (
+                item["component"] in self.__dict__
+                and isinstance(self.__dict__[item["component"]], dict)
+                and self.__dict__[item["component"]].get(item["name"], None)
+            ):
                 del self.__dict__[item["component"]][item["name"]]
-            elif hasattr(self, item["component"]) and isinstance(getattr(self, item["component"]), dict) and \
-                 getattr(self, item["component"]).get(item["name"], None): 
-                 del getattr(self, item["component"])[item["name"]]
-
+            elif (
+                hasattr(self, item["component"])
+                and isinstance(getattr(self, item["component"]), dict)
+                and getattr(self, item["component"]).get(item["name"], None)
+            ):
+                del getattr(self, item["component"])[item["name"]]
 
         with outfile.open("w") as cfg_dump:
-            filter_func = lambda attr, value: attr.name not in exclude_list
-            out_dict = attr.asdict(self, filter=filter_func)
+
+            def filter_attributes(attribute, value):
+                return attribute.name not in exclude_list
+
+            out_dict = attr.asdict(self, filter=filter_attributes)
             if ".json" in str(outfile):
                 json.dump(out_dict, cfg_dump, indent=4, default=json_serial)
             elif ".yml" in str(outfile) or ".yaml" in str(outfile):
@@ -143,10 +158,14 @@ class Config:
         # Add back in the sanitized items
         for item in sanitized:
             # This block might need adjustment
-            if item["component"] in self.__dict__ and isinstance(self.__dict__[item["component"]], dict):
-                 self.__dict__[item["component"]][item["name"]] = item["contents"]
-            elif hasattr(self, item["component"]) and isinstance(getattr(self, item["component"]), dict):
-                 getattr(self, item["component"])[item["name"]] = item["contents"]
+            if item["component"] in self.__dict__ and isinstance(
+                self.__dict__[item["component"]], dict
+            ):
+                self.__dict__[item["component"]][item["name"]] = item["contents"]
+            elif hasattr(self, item["component"]) and isinstance(
+                getattr(self, item["component"]), dict
+            ):
+                getattr(self, item["component"])[item["name"]] = item["contents"]
 
     def init_logger(self, path=None, level=None):
         path = path or self.RIZZA["LOG PATH"]
