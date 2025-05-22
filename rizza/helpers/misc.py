@@ -5,7 +5,6 @@ from json import loads
 from random import randint
 
 from logzero import logger
-from nailgun import entity_mixins
 from requests import HTTPError
 
 
@@ -60,8 +59,6 @@ def dictionary_exclusion(indict=None, exclude=None):
 
 def handle_exception(exception=None):
     """Translate an exception into a usable format."""
-    if exception.__class__.__name__ in dir(entity_mixins):
-        return {"nailgun": exception.__class__.__name__}
     if isinstance(exception, HTTPError):
         resp = {}
         for name, contents in exception.__dict__.items():

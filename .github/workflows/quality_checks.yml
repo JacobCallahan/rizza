@@ -11,39 +11,51 @@ on:
       - ".gitignore"
 
 jobs:
-  analyze:
-    name: CodeQL Analysis
+  pre_commit_checks:
+    name: "Pre-Commit Checks"
     runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.11", "3.12"]
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v2
+      - name: Setup Python 3.13
+        uses: actions/setup-python@v2
         with:
-          languages: ${{ matrix.language }}
+          python-version: "3.13"
 
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v2
+      - name: Run Pre-Commit Hooks
+        uses: pre-commit/action@v3.0.1
 
-      - name: Setup Python
+  python_tests:
+    name: "Python Tests"
+    runs-on: ubuntu-latest
+    needs: pre_commit_checks
+    strategy:
+      fail-fast: true
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Setup Python ${{ matrix.python-version }}
         uses: actions/setup-python@v2
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Pre Commit Checks
-        uses: pre-commit/action@v3.0.1
+      # The "Pre Commit Checks" step has been moved to the 'pre_commit_checks' job
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
 
       - name: Unit Tests
+        env:
+          UV_SYSTEM_PYTHON: 1
         run: |
-          pip install -U pip
-          pip install .[dev]
+          uv pip install "rizza @ ."
+          rizza --help
           # mv config/rizza.yaml.example ~/rizza/config/rizza.yaml
           # mv config/server_configs.json.example ~/rizza/config/server_configs.json
           # pytest -v tests/

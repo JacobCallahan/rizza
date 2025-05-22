@@ -8,20 +8,12 @@ BASE_LIST = [1, 2, 3]
 BASE_DICT = {"a": 1, "b": 2, "c": 3}
 
 
-def test_positive_create_config():
-    """Simply create a config class and check it pulled the default nailgun"""
-    test_config = config.Config()
-    assert test_config.NAILGUN
-
-
 def test_positive_load_config():
     """Load the test config and assert the bits are in place"""
     test_config = config.Config(cfg_file="tests/data/test_config.yaml")
     assert test_config.RIZZA["value"] == BASE_VALUE
     assert test_config.RIZZA["list"] == BASE_LIST
     assert test_config.RIZZA["dict"] == BASE_DICT
-    assert test_config.NAILGUN["SATUSER"] == "test_user"
-    assert test_config.NAILGUN["VERIFY"] is False
 
 
 def test_positive_save_config():

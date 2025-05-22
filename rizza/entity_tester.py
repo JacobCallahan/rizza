@@ -3,7 +3,6 @@ import inspect
 
 import attr
 from logzero import logger
-from nailgun import entities
 
 from rizza.helpers import inputs
 from rizza.helpers.misc import (
@@ -93,38 +92,26 @@ class EntityTester:
     @staticmethod
     def pull_entities(exclude=None):
         """Return a dictionary of nailgun entities."""
-        edict = {
-            entity: entities.__dict__[entity]
-            for entity in dir(entities)
-            if entity[0] != "_" and entity[0].istitle() and not entity.isupper()
-        }
-        return dictionary_exclusion(edict, exclude)
+        logger.warning("Nailgun entities are not available. Returning empty list.")
+        return {}
 
     @staticmethod
     def pull_methods(entity=None, exclude=None):
         """Return a dictionary of methods belonging to an entity."""
         if entity:
-            try:
-                methods = inspect.getmembers(entity(), predicate=inspect.ismethod)
-            except TypeError as err:
-                # Failed nailgun's _check_for_value
-                logger.error(f"Unable to init {entity} due to {err}")
-                return None
-            mdict = {name: method for name, method in methods if "__" not in name}
-        return dictionary_exclusion(mdict, exclude)
+            logger.warning(
+                f"Nailgun entity {entity} methods are not available. Returning empty list."
+            )
+        return {}
 
     @staticmethod
     def pull_fields(entity=None, exclude=None):
         """Return a dictionary of fields belonging to an entity's method."""
         if entity:
-            try:
-                entity_inst = entity()
-                fields = entity_inst._fields
-            except Exception as err:
-                # Failed nailgun's _check_for_value or entity doens't have _fields
-                logger.error(f"Unable to init {entity} due to {err}")
-                return None
-            return dictionary_exclusion(fields, exclude)
+            logger.warning(
+                f"Nailgun entity {entity} fields are not available. Returning empty list."
+            )
+        return {}
 
     @staticmethod
     def pull_args(method=None):
@@ -186,13 +173,14 @@ class EntityTestTask:
                 self.entity, self.method, self.field_dict, self.arg_dict
             )
         )
+        pulled_entities = EntityTester.pull_entities()
+        if not pulled_entities or self.entity not in pulled_entities:
+            logger.error(f"Entity {self.entity} not found or nailgun entities unavailable.")
+            return {"fail": f"Entity {self.entity} not found or nailgun entities unavailable."}
+
         try:
-            entity = EntityTester.pull_entities()[self.entity](**self.field_dict)
-            result = getattr(entity, self.method)(**self.arg_dict)
-            if not isinstance(result, dict):
-                result = result.to_json_dict()
-            logger.debug(f"pass: {result}")
-            return {"pass": result}
+            logger.warning("Nailgun entity execution skipped.")
+            return {"skipped": "Nailgun entity execution skipped due to nailgun removal."}
         except Exception as e:
             handled = handle_exception(e)
             logger.debug(f"fail: {handled}")

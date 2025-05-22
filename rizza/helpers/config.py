@@ -1,11 +1,9 @@
 """Project configuration helpers."""
 import json
-import os
 from pathlib import Path
 
 import attr
 from logzero import logger
-from nailgun.config import ServerConfig
 import yaml
 
 from rizza.helpers import logger as rza_logger
@@ -24,11 +22,9 @@ class Config:
 
     cfg_file = attr.ib(default="config/rizza.yaml", cmp=False, repr=False)
     RIZZA = attr.ib(default=attr.Factory(dict), cmp=False)
-    NAILGUN = attr.ib(default=attr.Factory(dict), cmp=False)
 
     def __attrs_post_init__(self):
         """Load in config files, then environment variables"""
-        # first, attempt to load nailgun config
         self.base_dir = Path.home().joinpath("rizza")
         # we want to always use current directory as base for tests
         if "tests" in str(self.cfg_file):
@@ -41,28 +37,7 @@ class Config:
 
     def _load_environment_vars(self):
         """Load in key variables that may exist in the environment"""
-        self.NAILGUN["SATHOST"] = os.environ.get(
-            "SATHOST", self.NAILGUN.get("SATHOST", "https://localhost")
-        )
-        self.NAILGUN["SATUSER"] = os.environ.get("SATUSER", self.NAILGUN.get("SATUSER", "admin"))
-        self.NAILGUN["SATPASS"] = os.environ.get(
-            "SATPASS", self.NAILGUN.get("SATPASS", "changeme")
-        )
-        self.NAILGUN["CONFILE"] = os.environ.get("CONFILE", self.NAILGUN.get("CONFILE", None))
-
-    def _load_nailgun(self, path=None):
-        """Check if there is an auto-loadable json config."""
-        try:
-            server_config = ServerConfig(url="").get(path=path)
-        except Exception:
-            try:
-                server_config = ServerConfig(url="").get(
-                    path=self.base_dir.joinpath("config/server_configs.json")
-                )
-                server_config.save()
-            except Exception as e:
-                logger.error(e)
-        self.nailgun_config(conf=server_config)
+        pass  # Nailgun related environment variables removed
 
     def _load_genetics(self):
         """Ensure the genetic algorithm vars are populated."""
@@ -99,16 +74,28 @@ class Config:
         """Attempt to load in config files"""
         infile = Path(cfg_file or self.cfg_file).resolve()
         logger.info(f"Loading config from {infile.absolute()}")
-        if infile.suffix == ".json":
-            loaded_cfg = json.loads(infile.read_text())
-        elif infile.suffix in [".yml", ".yaml"]:
-            loaded_cfg = yaml.load(infile.read_text(), Loader=yaml.FullLoader)
+        loaded_cfg = {}  # Default to empty config
+        try:
+            if infile.exists():
+                if infile.suffix == ".json":
+                    loaded_cfg = json.loads(infile.read_text())
+                elif infile.suffix in [".yml", ".yaml"]:
+                    loaded_cfg = yaml.load(infile.read_text(), Loader=yaml.FullLoader)
+            else:
+                logger.warning(
+                    f"Config file {infile.absolute()} not found. Using default/empty config."
+                )
+        except FileNotFoundError:
+            logger.warning(
+                f"Config file {infile.absolute()} not found (FileNotFoundError). "
+                "Using default/empty config."
+            )
+        except Exception as e:
+            logger.error(
+                f"Error loading config file {infile.absolute()}: {e}. "
+                "Using default/empty config."
+            )
 
-        if "NAILGUN" in loaded_cfg:
-            self.NAILGUN = loaded_cfg["NAILGUN"]
-            self.nailgun_config()
-        else:
-            self._load_nailgun()
         if "RIZZA" in loaded_cfg:
             self.RIZZA = loaded_cfg["RIZZA"]
             self._load_genetics()
@@ -117,27 +104,10 @@ class Config:
                 self.RIZZA["LOG PATH"] = self.base_dir.joinpath(self.RIZZA["LOG PATH"])
             self.RIZZA["LOG LEVEL"] = self.RIZZA.get("LOG LEVEL", "info")
 
-    def load_cli_args(self, args=None, command=False):  # noqa: PLR0912 (too many branches)
+    def load_cli_args(self, args=None, command=False):  # (too many branches)
         """Pull in any relevant settings from argparse"""
         if "project" in dir(args):
-            if args.project == "nailgun":
-                if args.target:
-                    self.NAILGUN["SATHOST"] = args.target
-                if args.user:
-                    self.NAILGUN["SATUSER"] = args.user
-                if args.password:
-                    self.NAILGUN["SATPASS"] = args.password
-                if args.verify:
-                    self.NAILGUN["VERIFY"] = args.verify
-                if args.label:
-                    self.NAILGUN["LABEL"] = args.verify
-                if args.path:
-                    self.NAILGUN["CONFILE"] = args.path
-                    self._load_nailgun(path=args.path)
-                if not args.show and not args.clear:
-                    self.save_config()
-                    logger.debug("Set nailgun configuration.")
-            elif args.project == "rizza":
+            if args.project == "rizza":
                 if args.path:
                     self.RIZZA["CONFILE"] = args.path
                 if not args.show and not args.clear:
@@ -156,16 +126,29 @@ class Config:
         # Use this list to remove entire class variables
         exclude_list = ["base_dir", "cfg_file"]
         # Use this list to remove unserializable objects
-        sanitized = [
-            {"component": "NAILGUN", "name": "CONFIG", "contents": self.NAILGUN.get("CONFIG", "")}
-        ]
+        sanitized = []  # Nailgun related sanitization removed
         # Remove each of those objects
         for item in sanitized:
-            if self.__dict__[item["component"]].get(item["name"], None):
+            # This block might need adjustment if NAILGUN was a direct attribute vs. a dict key
+            if (
+                item["component"] in self.__dict__
+                and isinstance(self.__dict__[item["component"]], dict)
+                and self.__dict__[item["component"]].get(item["name"], None)
+            ):
                 del self.__dict__[item["component"]][item["name"]]
+            elif (
+                hasattr(self, item["component"])
+                and isinstance(getattr(self, item["component"]), dict)
+                and getattr(self, item["component"]).get(item["name"], None)
+            ):
+                del getattr(self, item["component"])[item["name"]]
 
         with outfile.open("w") as cfg_dump:
-            out_dict = attr.asdict(self, filter=lambda attr, value: attr.name not in exclude_list)
+
+            def filter_attributes(attribute, value):
+                return attribute.name not in exclude_list
+
+            out_dict = attr.asdict(self, filter=filter_attributes)
             if ".json" in str(outfile):
                 json.dump(out_dict, cfg_dump, indent=4, default=json_serial)
             elif ".yml" in str(outfile) or ".yaml" in str(outfile):
@@ -174,43 +157,20 @@ class Config:
         logger.info(f"Saved current configuration in: {outfile}")
         # Add back in the sanitized items
         for item in sanitized:
-            self.__dict__[item["component"]][item["name"]] = item["contents"]
-
-    def nailgun_config(self, conf=None, label="default"):
-        """Return the current nailgun config.
-        If a new one is passed in, save it and parse the pieces.
-        If one isn't passed in and doesn't currently exist, create it.
-        """
-        if conf:
-            # Load the passed in configuration file
-            self.NAILGUN["CONFIG"] = conf
-            self.NAILGUN["SATHOST"] = conf.url or os.uname()[1]
-            self.NAILGUN["SATUSER"], self.NAILGUN["SATPASS"] = conf.auth or ("admin", "changeme")
-            self.NAILGUN["VERIFY"] = conf.verify or False
-            self.NAILGUN["LABEL"] = label
-        if not self.NAILGUN.get("CONFIG", None):
-            server_conf = ServerConfig(url="")
-            server_conf.url = self.NAILGUN.get("SATHOST", "https://localhost")
-            server_conf.auth = (
-                self.NAILGUN.get("SATUSER", "admin"),
-                self.NAILGUN.get("SATPASS", "changeme"),
-            )
-            server_conf.verify = self.NAILGUN.get("VERIFY", False)
-            server_conf.save(label=self.NAILGUN.get("LABEL", label))
-            self.NAILGUN["CONFIG"] = server_conf
-        return self.NAILGUN["CONFIG"]
+            # This block might need adjustment
+            if item["component"] in self.__dict__ and isinstance(
+                self.__dict__[item["component"]], dict
+            ):
+                self.__dict__[item["component"]][item["name"]] = item["contents"]
+            elif hasattr(self, item["component"]) and isinstance(
+                getattr(self, item["component"]), dict
+            ):
+                getattr(self, item["component"])[item["name"]] = item["contents"]
 
     def init_logger(self, path=None, level=None):
         path = path or self.RIZZA["LOG PATH"]
         level = level or self.RIZZA["LOG LEVEL"]
         rza_logger.setup_logzero(path, level)
-
-    def clear_nailgun(self):
-        """Clear all current nailgun configurations"""
-        ServerConfig(url="").save(label=self.NAILGUN["LABEL"], path=self.NAILGUN.get("path", None))
-        for key in self.NAILGUN:
-            self.NAILGUN[key] = None
-        self.save_config()
 
     def clear_rizza(self):
         """Clear all current rizza configurations"""
@@ -220,4 +180,9 @@ class Config:
     @staticmethod
     def yaml_print(in_dict=None):
         """Convert a dictionary to yaml string, and print it out"""
-        print(yaml.dump(in_dict, default_flow_style=False))
+        # rprint(Syntax(yaml_string, "yaml", theme="native", line_numbers=True))
+        # For consistency with potential prior usage if rprint not available:
+        if in_dict is not None:
+            print(yaml.dump(in_dict, default_flow_style=False))
+        else:
+            print("Configuration dictionary is None.")

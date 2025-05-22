@@ -8,9 +8,7 @@ description = "An increasingly intelligent automated product tester."
 readme = "README.md"
 requires-python = ">=3.10"
 keywords = ["rizza", "machine learning", "api", "cli", "testing"]
-authors = [
-    {name = "Jacob J Callahan", email = "jacob.callahan05@gmail.com"}
-]
+authors = [{ name = "Jacob J Callahan", email = "jacob.callahan05@gmail.com" }]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -19,12 +17,17 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
     "attrs",
     "fauxfactory",
     "logzero",
     "pyyaml",
+    "pytest",
+    "requests",
+    "rich-click",
+    "rich",
 ]
 dynamic = ["version"]
 
@@ -32,15 +35,10 @@ dynamic = ["version"]
 Repository = "https://github.com/JacobCallahan/rizza"
 
 [project.optional-dependencies]
-dev = [
-    "pre-commit",
-    "pytest",
-    "pytest-randomly",
-    "ruff"
-]
+dev = ["pre-commit", "pytest", "pytest-randomly", "ruff"]
 
 [project.scripts]
-rizza = "rizza.__main__:main"
+rizza = "rizza.__main__:cli"
 
 [tool.setuptools]
 platforms = ["any"]
@@ -50,7 +48,7 @@ include-package-data = true
 [tool.setuptools.packages.find]
 include = ["rizza"]
 
-[tool.setuptools_scm]  # same as use_scm_version=True in setup.py
+[tool.setuptools_scm] # same as use_scm_version=True in setup.py
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -63,39 +61,37 @@ target-version = "py311"
 [tool.ruff.lint]
 fixable = ["ALL"]
 select = [
-    "B",  # bugbear
-    "C90", # mccabe
-    "E",  # pycodestyle
-    "F",  # flake8
-    "G", # flake8-logging-format
-    "I", # isort
+    "B",    # bugbear
+    "C90",  # mccabe
+    "E",    # pycodestyle
+    "F",    # flake8
+    "G",    # flake8-logging-format
+    "I",    # isort
     "PERF", # Perflint rules
-    "PLC", # pylint
-    "PLE", # pylint
-    "PLR", # pylint
-    "PLW", # pylint
-    "PTH", # Use pathlib
-    "PT",  # flake8-pytest
+    "PLC",  # pylint
+    "PLE",  # pylint
+    "PLR",  # pylint
+    "PLW",  # pylint
+    "PTH",  # Use pathlib
+    "PT",   # flake8-pytest
     "RET",  # flake8-return
-    "RUF", # Ruff-specific rules
+    "RUF",  # Ruff-specific rules
     "SIM",  # flake8-simplify
-    "UP",  # pyupgrade
-    "W",  # pycodestyle
+    "UP",   # pyupgrade
+    "W",    # pycodestyle
 ]
 ignore = [
-    "B019",  # lru_cache can lead to memory leaks - acceptable tradeoff
+    "B019",    # lru_cache can lead to memory leaks - acceptable tradeoff
     "PLR0911", # too many return statements - acceptable tradeoff
     "PLR0913", # too many arguments in function call - acceptable tradeoff
-    "PT004", # pytest underscrore prefix for non-return fixtures
-    "PT005", # pytest no underscrore prefix for return fixtures
-    "RET503", # missing explicit return
+    "PT004",   # pytest underscrore prefix for non-return fixtures
+    "PT005",   # pytest no underscrore prefix for return fixtures
+    "RET503",  # missing explicit return
 ]
 
 [tool.ruff.lint.isort]
 force-sort-within-sections = true
-known-first-party = [
-    "rizza",
-]
+known-first-party = ["rizza"]
 combine-as-imports = true
 
 [tool.ruff.lint.flake8-pytest-style]
