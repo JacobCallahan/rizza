@@ -48,3 +48,14 @@ def test_positive_convert_config():
     assert new_config.RIZZA["list"] == base_config.RIZZA["list"]
     assert new_config.RIZZA["dict"] == base_config.RIZZA["dict"]
     Path("tests/data/base_config.json").unlink()
+
+
+def test_positive_nanoconf_load():
+    """Test loading configuration using nanoconf format"""
+    nanoconf_config = config.Config(cfg_file="tests/data/test_config.nconf")
+    yaml_config = config.Config(cfg_file="tests/data/test_config.yaml")
+    
+    # Both should produce identical RIZZA configurations
+    assert nanoconf_config.RIZZA["value"] == yaml_config.RIZZA["value"] == BASE_VALUE
+    assert nanoconf_config.RIZZA["list"] == yaml_config.RIZZA["list"] == BASE_LIST
+    assert nanoconf_config.RIZZA["dict"] == yaml_config.RIZZA["dict"] == BASE_DICT

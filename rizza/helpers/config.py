@@ -4,10 +4,20 @@ from pathlib import Path
 
 import attr
 from logzero import logger
+from nanoconf import NanoConf
 import yaml
 
 from rizza.helpers import logger as rza_logger
 from rizza.helpers.misc import json_serial
+
+
+# Patch NanoConf to add missing functionality
+def to_dict(self):
+    """Convert NanoConf instance to a dictionary"""
+    return {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
+
+# Add the to_dict method to NanoConf at runtime
+NanoConf.to_dict = to_dict
 
 
 @attr.s()
@@ -31,7 +41,7 @@ class Config:
             self.cfg_file = Path().joinpath(self.cfg_file)
         elif self.cfg_file != str(Path(self.cfg_file).absolute()):
             self.cfg_file = self.base_dir.joinpath(self.cfg_file)
-        self.RIZZA["CONFILE"] = self.cfg_file
+        self.RIZZA["CONFILE"] = str(self.cfg_file)  # Convert Path to string to avoid serialization issues
         self.load_config()
         self._load_environment_vars()
 
@@ -74,6 +84,24 @@ class Config:
         """Attempt to load in config files"""
         infile = Path(cfg_file or self.cfg_file).resolve()
         logger.info(f"Loading config from {infile.absolute()}")
+        
+        # Try to use nanoconf first if we have a .nconf file
+        nconf_file = infile.with_suffix('.nconf')
+        if nconf_file.exists():
+            try:
+                nano_config = NanoConf(str(nconf_file))
+                if hasattr(nano_config, 'RIZZA'):
+                    self.RIZZA = nano_config.RIZZA.to_dict() if hasattr(nano_config.RIZZA, 'to_dict') else dict(nano_config.RIZZA)
+                    self._load_genetics()
+                    self.RIZZA["LOG PATH"] = self.RIZZA.get("LOG PATH", "logs/rizza.log")
+                    if self.RIZZA["LOG PATH"] != str(Path(self.RIZZA["LOG PATH"]).absolute()):
+                        self.RIZZA["LOG PATH"] = str(self.base_dir.joinpath(self.RIZZA["LOG PATH"]))
+                    self.RIZZA["LOG LEVEL"] = self.RIZZA.get("LOG LEVEL", "info")
+                    return
+            except Exception as e:
+                logger.warning(f"Failed to load nanoconf file {nconf_file}: {e}. Falling back to traditional loading.")
+        
+        # Fallback to traditional YAML/JSON loading
         loaded_cfg = {}  # Default to empty config
         try:
             if infile.exists():
@@ -101,7 +129,7 @@ class Config:
             self._load_genetics()
             self.RIZZA["LOG PATH"] = self.RIZZA.get("LOG PATH", "logs/rizza.log")
             if self.RIZZA["LOG PATH"] != str(Path(self.RIZZA["LOG PATH"]).absolute()):
-                self.RIZZA["LOG PATH"] = self.base_dir.joinpath(self.RIZZA["LOG PATH"])
+                self.RIZZA["LOG PATH"] = str(self.base_dir.joinpath(self.RIZZA["LOG PATH"]))
             self.RIZZA["LOG LEVEL"] = self.RIZZA.get("LOG LEVEL", "info")
 
     def load_cli_args(self, args=None, command=False):  # (too many branches)
