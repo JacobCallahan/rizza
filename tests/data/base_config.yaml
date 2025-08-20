@@ -1,0 +1,17 @@
+RIZZA:
+  CONFILE: !!python/object/apply:pathlib.PosixPath
+  - /
+  - home
+  - runner
+  - rizza
+  - config
+  - rizza.yaml
+  dict:
+    a: 1
+    b: 2
+    c: 3
+  list:
+  - 1
+  - 2
+  - 3
+  value: TEST
