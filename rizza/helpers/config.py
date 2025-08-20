@@ -1,5 +1,4 @@
 """Project configuration helpers."""
-import json
 from pathlib import Path
 
 import attr
@@ -8,13 +7,70 @@ from nanoconf import NanoConf
 import yaml
 
 from rizza.helpers import logger as rza_logger
-from rizza.helpers.misc import json_serial
+
+
+def box_to_dict(obj):
+    """Recursively convert Box objects to plain dictionaries"""
+    if hasattr(obj, '_box_config') or (hasattr(obj, 'to_dict') and hasattr(obj, 'keys')):
+        # This is likely a Box object
+        return {k: box_to_dict(v) for k, v in obj.items()}
+    elif isinstance(obj, dict):
+        return {k: box_to_dict(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [box_to_dict(item) for item in obj]
+    else:
+        return obj
+
+
+# Default configuration values
+DEFAULT_CONFIG = {
+    "GENETICS": {
+        "POPULATION COUNT": 100,
+        "MAX GENERATIONS": 10000,
+        "ALLOW DEPENDENCIES": True,
+        "ALLOW RECURSION": True,
+        "MAX RECURSIVE GENERATIONS": 10000,
+        "MAX RECURSIVE DEPTH": 10,
+        "CRITERIA": {
+            "pass": 500,
+            "fail": -200,
+            "HTTPError": -200,
+            "200": 1000,
+            "404": -500,
+            "422": -200,
+            "500": -1000,
+            "created": 500,
+            "BadValueError": -500,
+            "TypeError": -200,
+        }
+    },
+    "LOG PATH": "logs/rizza.log",
+    "LOG LEVEL": "info"
+}
 
 
 # Patch NanoConf to add missing functionality
 def to_dict(self):
-    """Convert NanoConf instance to a dictionary"""
-    return {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
+    """Convert NanoConf instance to a dictionary, excluding internal attributes"""
+    result = {}
+    for key, value in self.__dict__.items():
+        # Skip private/internal attributes and methods
+        if not key.startswith('_') and not callable(value):
+            try:
+                # Try to convert complex objects to simple types
+                if hasattr(value, '__dict__') and not isinstance(value, (str, int, float, bool, list, dict)):
+                    # This is a complex object, try to convert recursively
+                    if hasattr(value, 'to_dict'):
+                        result[key] = value.to_dict()
+                    else:
+                        # Skip complex objects that can't be converted
+                        continue
+                else:
+                    result[key] = value
+            except (TypeError, AttributeError):
+                # Skip attributes that can't be serialized
+                continue
+    return result
 
 # Add the to_dict method to NanoConf at runtime
 NanoConf.to_dict = to_dict
@@ -41,184 +97,176 @@ class Config:
             self.cfg_file = Path().joinpath(self.cfg_file)
         elif self.cfg_file != str(Path(self.cfg_file).absolute()):
             self.cfg_file = self.base_dir.joinpath(self.cfg_file)
-        self.RIZZA["CONFILE"] = str(self.cfg_file)  # Convert to string for serialization
+        
+        # Initialize RIZZA as dict first, then load config
         self.load_config()
+        
+        # Set CONFILE after loading
+        setattr(self.RIZZA, 'CONFILE', str(self.cfg_file))
         self._load_environment_vars()
 
     def _load_environment_vars(self):
         """Load in key variables that may exist in the environment"""
         pass  # Nailgun related environment variables removed
 
-    def _load_genetics(self):
-        """Ensure the genetic algorithm vars are populated."""
-        if not self.RIZZA.get("GENETICS", None):
-            # No configuration found. Begin creating one.
-            self.RIZZA["GENETICS"] = {}
-        if not self.RIZZA["GENETICS"].get("POPULATION COUNT"):
-            self.RIZZA["GENETICS"]["POPULATION COUNT"] = 100
-        if not self.RIZZA["GENETICS"].get("MAX GENERATIONS"):
-            self.RIZZA["GENETICS"]["MAX GENERATIONS"] = 10000
-        if self.RIZZA["GENETICS"].get("ALLOW DEPENDENCIES", "x") == "x":
-            self.RIZZA["GENETICS"]["ALLOW DEPENDENCIES"] = True
-        if self.RIZZA["GENETICS"].get("ALLOW RECURSION", "x") == "x":
-            self.RIZZA["GENETICS"]["ALLOW RECURSION"] = True
-        if not self.RIZZA["GENETICS"].get("MAX RECURSIVE GENERATIONS"):
-            self.RIZZA["GENETICS"]["MAX RECURSIVE GENERATIONS"] = 10000
-        if not self.RIZZA["GENETICS"].get("MAX RECURSIVE DEPTH"):
-            self.RIZZA["GENETICS"]["MAX RECURSIVE DEPTH"] = 10
-        if not self.RIZZA["GENETICS"].get("CRITERIA"):
-            self.RIZZA["GENETICS"]["CRITERIA"] = {
-                "pass": 500,
-                "fail": -200,
-                "HTTPError": -200,
-                "200": 1000,
-                "404": -500,
-                "422": -200,
-                "500": -1000,
-                "created": 500,
-                "BadValueError": -500,
-                "TypeError": -200,
-            }
+    def _load_defaults(self):
+        """Ensure default configuration values are populated."""
+        # If RIZZA is not a NanoConf instance, convert it
+        if not isinstance(self.RIZZA, NanoConf):
+            self.RIZZA = NanoConf(self.RIZZA if isinstance(self.RIZZA, dict) else {})
+        
+        # Apply defaults from DEFAULT_CONFIG
+        for key, value in DEFAULT_CONFIG.items():
+            key_attr = key.replace(' ', '_').upper()
+            current_value = getattr(self.RIZZA, key_attr, None)
+            if current_value is None:
+                setattr(self.RIZZA, key_attr, value)
+            elif isinstance(value, dict) and hasattr(current_value, '__dict__'):
+                # For nested dicts like GENETICS, merge missing keys
+                for sub_key, sub_value in value.items():
+                    sub_key_attr = sub_key.replace(' ', '_').upper()
+                    if not hasattr(current_value, sub_key_attr) or getattr(current_value, sub_key_attr, None) is None:
+                        setattr(current_value, sub_key_attr, sub_value)
 
     def load_config(self, cfg_file=None):
-        """Attempt to load in config files"""
+        """Load configuration using nanoconf only"""
         infile = Path(cfg_file or self.cfg_file).resolve()
         logger.info(f"Loading config from {infile.absolute()}")
 
-        # Try to use nanoconf first if we have a .nconf file
-        nconf_file = infile.with_suffix('.nconf')
-        if nconf_file.exists():
-            try:
-                nano_config = NanoConf(str(nconf_file))
-                if hasattr(nano_config, 'RIZZA'):
-                    rizza_data = (
-                        nano_config.RIZZA.to_dict()
-                        if hasattr(nano_config.RIZZA, 'to_dict')
-                        else dict(nano_config.RIZZA)
-                    )
-                    self.RIZZA = rizza_data
-                    self._load_genetics()
-                    self.RIZZA["LOG PATH"] = self.RIZZA.get("LOG PATH", "logs/rizza.log")
-                    log_path = self.RIZZA["LOG PATH"]
-                    if log_path != str(Path(log_path).absolute()):
-                        self.RIZZA["LOG PATH"] = str(self.base_dir.joinpath(log_path))
-                    self.RIZZA["LOG LEVEL"] = self.RIZZA.get("LOG LEVEL", "info")
-                    return
-            except Exception as e:
-                logger.warning(
-                    f"Failed to load nanoconf file {nconf_file}: {e}. "
-                    "Falling back to traditional loading."
-                )
+        # Convert to .nconf if needed
+        if not str(infile).endswith('.nconf'):
+            infile = infile.with_suffix('.nconf')
 
-        # Fallback to traditional YAML/JSON loading
-        loaded_cfg = {}  # Default to empty config
         try:
             if infile.exists():
-                if infile.suffix == ".json":
-                    loaded_cfg = json.loads(infile.read_text())
-                elif infile.suffix in [".yml", ".yaml"]:
-                    loaded_cfg = yaml.load(infile.read_text(), Loader=yaml.FullLoader)
+                # Load the nanoconf
+                nano_config = NanoConf(str(infile))
+                
+                # Check if we have rizza config - either direct content or under RIZZA key
+                if hasattr(nano_config, 'RIZZA'):
+                    # Config saved with RIZZA key (from save_config method)
+                    # Get the raw dict data instead of Box object to avoid serialization issues
+                    rizza_data = getattr(nano_config, 'RIZZA')
+                    
+                    # Convert Box objects to plain dictionaries recursively
+                    rizza_dict = box_to_dict(rizza_data)
+                    
+                    # Create a temp file to create NanoConf from the dict
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.nconf', delete=False) as f:
+                        yaml.dump(rizza_dict, f, default_flow_style=False)
+                        temp_path = f.name
+                    self.RIZZA = NanoConf(temp_path)
+                    Path(temp_path).unlink()  # Clean up temp file
+                elif infile.name.startswith('rizza') or infile.name.startswith('test_config'):
+                    # This is a rizza config file - use its content directly
+                    self.RIZZA = nano_config
+                else:
+                    # Look for rizza attribute or initialize empty
+                    if hasattr(nano_config, 'rizza'):
+                        self.RIZZA = nano_config.rizza
+                    else:
+                        # Initialize empty by creating a temp nconf file with empty dict content
+                        import tempfile
+                        with tempfile.NamedTemporaryFile(mode='w', suffix='.nconf', delete=False) as f:
+                            print('{}', file=f)
+                            temp_path = f.name
+                        self.RIZZA = NanoConf(temp_path)
+                        Path(temp_path).unlink()  # Clean up temp file
             else:
-                logger.warning(
-                    f"Config file {infile.absolute()} not found. Using default/empty config."
-                )
-        except FileNotFoundError:
-            logger.warning(
-                f"Config file {infile.absolute()} not found (FileNotFoundError). "
-                "Using default/empty config."
-            )
+                logger.warning(f"Config file {infile.absolute()} not found. Using defaults.")
+                # Initialize empty by creating a temp nconf file with empty dict content
+                import tempfile
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.nconf', delete=False) as f:
+                    print('{}', file=f)
+                    temp_path = f.name
+                self.RIZZA = NanoConf(temp_path)
+                Path(temp_path).unlink()  # Clean up temp file
         except Exception as e:
-            logger.error(
-                f"Error loading config file {infile.absolute()}: {e}. "
-                "Using default/empty config."
-            )
+            logger.error(f"Error loading config file {infile.absolute()}: {e}. Using defaults.")
+            # Initialize empty by creating a temp nconf file with empty dict content
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.nconf', delete=False) as f:
+                print('{}', file=f)
+                temp_path = f.name
+            self.RIZZA = NanoConf(temp_path)
+            Path(temp_path).unlink()  # Clean up temp file
 
-        if "RIZZA" in loaded_cfg:
-            self.RIZZA = loaded_cfg["RIZZA"]
-            self._load_genetics()
-            self.RIZZA["LOG PATH"] = self.RIZZA.get("LOG PATH", "logs/rizza.log")
-            if self.RIZZA["LOG PATH"] != str(Path(self.RIZZA["LOG PATH"]).absolute()):
-                self.RIZZA["LOG PATH"] = str(self.base_dir.joinpath(self.RIZZA["LOG PATH"]))
-            self.RIZZA["LOG LEVEL"] = self.RIZZA.get("LOG LEVEL", "info")
-        else:
-            # No config loaded, ensure genetics are initialized
-            self._load_genetics()
-            self.RIZZA["LOG PATH"] = self.RIZZA.get("LOG PATH", "logs/rizza.log")
-            if self.RIZZA["LOG PATH"] != str(Path(self.RIZZA["LOG PATH"]).absolute()):
-                self.RIZZA["LOG PATH"] = str(self.base_dir.joinpath(self.RIZZA["LOG PATH"]))
-            self.RIZZA["LOG LEVEL"] = self.RIZZA.get("LOG LEVEL", "info")
+        # Apply default values
+        self._load_defaults()
+        
+        # Set up logging paths
+        log_path = getattr(self.RIZZA, 'LOG_PATH', DEFAULT_CONFIG['LOG PATH'])
+        if log_path != str(Path(log_path).absolute()):
+            setattr(self.RIZZA, 'LOG_PATH', str(self.base_dir.joinpath(log_path)))
 
     def load_cli_args(self, args=None, command=False):  # (too many branches)
         """Pull in any relevant settings from argparse"""
         if "project" in dir(args):
             if args.project == "rizza":
                 if args.path:
-                    self.RIZZA["CONFILE"] = args.path
+                    setattr(self.RIZZA, 'CONFILE', args.path)
                 if not args.show and not args.clear:
                     self.save_config()
                     logger.debug("Set rizza configuration.")
         elif command:
             # If we are pulling in args from a command, save them for future use
-            self.RIZZA["LAST"] = vars(args)
+            setattr(self.RIZZA, 'LAST', vars(args))
             self.save_config()
-            logger.debug("Command arguments saved in: {}".format(self.RIZZA["CONFILE"]))
+            logger.debug("Command arguments saved in: {}".format(getattr(self.RIZZA, 'CONFILE', 'unknown')))
 
     def save_config(self, cfg_file=None):
-        """Save the current configuration to a yaml or json file"""
+        """Save the current configuration to a nconf file"""
         # Include any non-serializable objects that can't be saved.
         outfile = Path(cfg_file or self.cfg_file)
+        
+        # Always save as .nconf format
+        if not str(outfile).endswith('.nconf'):
+            outfile = outfile.with_suffix('.nconf')
+            
         # Use this list to remove entire class variables
         exclude_list = ["base_dir", "cfg_file"]
-        # Use this list to remove unserializable objects
-        sanitized = []  # Nailgun related sanitization removed
-        # Remove each of those objects
-        for item in sanitized:
-            # This block might need adjustment if NAILGUN was a direct attribute vs. a dict key
-            if (
-                item["component"] in self.__dict__
-                and isinstance(self.__dict__[item["component"]], dict)
-                and self.__dict__[item["component"]].get(item["name"], None)
-            ):
-                del self.__dict__[item["component"]][item["name"]]
-            elif (
-                hasattr(self, item["component"])
-                and isinstance(getattr(self, item["component"]), dict)
-                and getattr(self, item["component"]).get(item["name"], None)
-            ):
-                del getattr(self, item["component"])[item["name"]]
+        
+        # Convert RIZZA NanoConf to dictionary for saving
+        rizza_dict = {}
+        if hasattr(self.RIZZA, 'to_dict'):
+            rizza_dict = self.RIZZA.to_dict()
+        else:
+            # Fallback: extract non-private attributes manually and safely
+            for attr_name in dir(self.RIZZA):
+                if not attr_name.startswith('_') and not callable(getattr(self.RIZZA, attr_name)):
+                    try:
+                        value = getattr(self.RIZZA, attr_name)
+                        rizza_dict[attr_name] = value
+                    except (TypeError, AttributeError):
+                        # Skip problematic attributes
+                        continue
+        
+        # Convert all Box objects to plain dictionaries recursively
+        rizza_dict = box_to_dict(rizza_dict)
 
         with outfile.open("w") as cfg_dump:
-
-            def filter_attributes(attribute, value):
-                return attribute.name not in exclude_list
-
-            out_dict = attr.asdict(self, filter=filter_attributes)
-            if ".json" in str(outfile):
-                json.dump(out_dict, cfg_dump, indent=4, default=json_serial)
-            elif ".yml" in str(outfile) or ".yaml" in str(outfile):
-                yaml.dump(out_dict, cfg_dump, default_flow_style=False)
+            # Create output dictionary with just the RIZZA data
+            out_dict = {"RIZZA": rizza_dict}
+            # Always save as YAML format (which nanoconf uses)
+            yaml.dump(out_dict, cfg_dump, default_flow_style=False)
 
         logger.info(f"Saved current configuration in: {outfile}")
-        # Add back in the sanitized items
-        for item in sanitized:
-            # This block might need adjustment
-            if item["component"] in self.__dict__ and isinstance(
-                self.__dict__[item["component"]], dict
-            ):
-                self.__dict__[item["component"]][item["name"]] = item["contents"]
-            elif hasattr(self, item["component"]) and isinstance(
-                getattr(self, item["component"]), dict
-            ):
-                getattr(self, item["component"])[item["name"]] = item["contents"]
 
     def init_logger(self, path=None, level=None):
-        path = path or self.RIZZA["LOG PATH"]
-        level = level or self.RIZZA["LOG LEVEL"]
+        path = path or getattr(self.RIZZA, 'LOG_PATH', 'logs/rizza.log')
+        level = level or getattr(self.RIZZA, 'LOG_LEVEL', 'info')
         rza_logger.setup_logzero(path, level)
 
     def clear_rizza(self):
         """Clear all current rizza configurations"""
-        self.RIZZA = {}
+        # Initialize empty by creating a temp nconf file with empty dict content
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.nconf', delete=False) as f:
+            print('{}', file=f)
+            temp_path = f.name
+        self.RIZZA = NanoConf(temp_path)
+        Path(temp_path).unlink()  # Clean up temp file
         self.save_config()
 
     @staticmethod

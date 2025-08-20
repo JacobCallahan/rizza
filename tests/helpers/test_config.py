@@ -10,10 +10,10 @@ BASE_DICT = {"a": 1, "b": 2, "c": 3}
 
 def test_positive_load_config():
     """Load the test config and assert the bits are in place"""
-    test_config = config.Config(cfg_file="tests/data/test_config.yaml")
-    assert test_config.RIZZA["value"] == BASE_VALUE
-    assert test_config.RIZZA["list"] == BASE_LIST
-    assert test_config.RIZZA["dict"] == BASE_DICT
+    test_config = config.Config(cfg_file="tests/data/rizza.nconf")
+    assert test_config.RIZZA.value == BASE_VALUE
+    assert test_config.RIZZA.list == BASE_LIST
+    assert test_config.RIZZA.dict == BASE_DICT
 
 
 def test_positive_save_config():
@@ -28,34 +28,33 @@ def test_positive_save_config():
     Verify: All saved components match their initial values
     """
     base_config = config.Config()
-    base_config.RIZZA["value"] = BASE_VALUE
-    base_config.RIZZA["list"] = BASE_LIST
-    base_config.RIZZA["dict"] = BASE_DICT
-    base_config.save_config("tests/data/base_config.yaml")
-    new_config = config.Config(cfg_file="tests/data/base_config.yaml")
-    assert new_config.RIZZA["value"] == base_config.RIZZA["value"]
-    assert new_config.RIZZA["list"] == base_config.RIZZA["list"]
-    assert new_config.RIZZA["dict"] == base_config.RIZZA["dict"]
-    Path("tests/data/base_config.yaml").unlink()
+    base_config.RIZZA.value = BASE_VALUE
+    base_config.RIZZA.list = BASE_LIST
+    base_config.RIZZA.dict = BASE_DICT
+    base_config.save_config("tests/data/base_config.nconf")
+    new_config = config.Config(cfg_file="tests/data/base_config.nconf")
+    assert new_config.RIZZA.value == base_config.RIZZA.value
+    assert new_config.RIZZA.list == base_config.RIZZA.list
+    assert new_config.RIZZA.dict == base_config.RIZZA.dict
+    Path("tests/data/base_config.nconf").unlink()
 
 
 def test_positive_convert_config():
-    """Load a yaml config, save it to json, reimport to verify contents"""
-    base_config = config.Config(cfg_file="tests/data/test_config.yaml")
-    base_config.save_config("tests/data/base_config.json")
-    new_config = config.Config(cfg_file="tests/data/base_config.json")
-    assert new_config.RIZZA["value"] == base_config.RIZZA["value"]
-    assert new_config.RIZZA["list"] == base_config.RIZZA["list"]
-    assert new_config.RIZZA["dict"] == base_config.RIZZA["dict"]
-    Path("tests/data/base_config.json").unlink()
+    """Load a nconf config, save it to another nconf, reimport to verify contents"""
+    base_config = config.Config(cfg_file="tests/data/rizza.nconf")
+    base_config.save_config("tests/data/base_config.nconf")
+    new_config = config.Config(cfg_file="tests/data/base_config.nconf")
+    assert new_config.RIZZA.value == base_config.RIZZA.value
+    assert new_config.RIZZA.list == base_config.RIZZA.list
+    assert new_config.RIZZA.dict == base_config.RIZZA.dict
+    Path("tests/data/base_config.nconf").unlink()
 
 
 def test_positive_nanoconf_load():
     """Test loading configuration using nanoconf format"""
-    nanoconf_config = config.Config(cfg_file="tests/data/test_config.nconf")
-    yaml_config = config.Config(cfg_file="tests/data/test_config.yaml")
+    nanoconf_config = config.Config(cfg_file="tests/data/rizza.nconf")
     
-    # Both should produce identical RIZZA configurations
-    assert nanoconf_config.RIZZA["value"] == yaml_config.RIZZA["value"] == BASE_VALUE
-    assert nanoconf_config.RIZZA["list"] == yaml_config.RIZZA["list"] == BASE_LIST
-    assert nanoconf_config.RIZZA["dict"] == yaml_config.RIZZA["dict"] == BASE_DICT
+    # Test that nanoconf configuration loads properly
+    assert nanoconf_config.RIZZA.value == BASE_VALUE
+    assert nanoconf_config.RIZZA.list == BASE_LIST
+    assert nanoconf_config.RIZZA.dict == BASE_DICT
