@@ -92,7 +92,12 @@ class Config:
                         current_value[sub_key] = deepcopy(sub_value)
 
     def load_config(self, cfg_file=None):
-        """Load configuration using picoconf only."""
+        """Load configuration using picoconf only.
+
+        Preferred on-disk format is direct rizza keys at file root. For backward
+        compatibility with older saved files, wrapped ``RIZZA``/``rizza`` keys are
+        also accepted and unwrapped.
+        """
         infile = Path(cfg_file or self.cfg_file).resolve()
         logger.info(f"Loading config from {infile.absolute()}")
 
