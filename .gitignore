@@ -91,3 +91,4 @@ ENV/
 # rizza-specific
 experimental/
 config/*
+tests/data/temp_export.txt

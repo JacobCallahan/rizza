@@ -97,7 +97,11 @@ class Config:
         rza_logger.setup_logzero(path, level)
 
     def clear_rizza(self):
-        """Clear all current rizza configurations"""
+        """Reset rizza configuration to defaults in memory.
+
+        Note: This does not write to disk. The on-disk .pconf files are not
+        modified; only the in-memory configuration is reset to DEFAULT_CONFIG.
+        """
         self.RIZZA = PicoConf(DEFAULT_CONFIG["rizza"])
 
     @staticmethod
