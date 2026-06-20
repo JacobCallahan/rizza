@@ -23,7 +23,7 @@ dependencies = [
     "attrs",
     "fauxfactory",
     "logzero",
-    "nanoconf",
+    "picoconf",
     "pyyaml",
     "pytest",
     "requests",

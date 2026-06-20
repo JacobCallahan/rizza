@@ -10,7 +10,7 @@ BASE_DICT = {"a": 1, "b": 2, "c": 3}
 
 def test_positive_load_config():
     """Load the test config and assert the bits are in place"""
-    test_config = config.Config(cfg_file="tests/data/rizza.nconf")
+    test_config = config.Config(cfg_file="tests/data/rizza.pconf")
     assert test_config.RIZZA.value == BASE_VALUE
     assert test_config.RIZZA.list == BASE_LIST
     assert test_config.RIZZA.dict == BASE_DICT
@@ -31,30 +31,28 @@ def test_positive_save_config():
     base_config.RIZZA.value = BASE_VALUE
     base_config.RIZZA.list = BASE_LIST
     base_config.RIZZA.dict = BASE_DICT
-    base_config.save_config("tests/data/base_config.nconf")
-    new_config = config.Config(cfg_file="tests/data/base_config.nconf")
+    base_config.save_config("tests/data/base_config.pconf")
+    new_config = config.Config(cfg_file="tests/data/base_config.pconf")
     assert new_config.RIZZA.value == base_config.RIZZA.value
     assert new_config.RIZZA.list == base_config.RIZZA.list
     assert new_config.RIZZA.dict == base_config.RIZZA.dict
-    Path("tests/data/base_config.nconf").unlink()
+    Path("tests/data/base_config.pconf").unlink()
 
 
 def test_positive_convert_config():
-    """Load a nconf config, save it to another nconf, reimport to verify contents"""
-    base_config = config.Config(cfg_file="tests/data/rizza.nconf")
-    base_config.save_config("tests/data/base_config.nconf")
-    new_config = config.Config(cfg_file="tests/data/base_config.nconf")
+    """Load a pconf config, save it to another pconf, reimport to verify contents."""
+    base_config = config.Config(cfg_file="tests/data/rizza.pconf")
+    base_config.save_config("tests/data/base_config.pconf")
+    new_config = config.Config(cfg_file="tests/data/base_config.pconf")
     assert new_config.RIZZA.value == base_config.RIZZA.value
     assert new_config.RIZZA.list == base_config.RIZZA.list
     assert new_config.RIZZA.dict == base_config.RIZZA.dict
-    Path("tests/data/base_config.nconf").unlink()
+    Path("tests/data/base_config.pconf").unlink()
 
 
-def test_positive_nanoconf_load():
-    """Test loading configuration using nanoconf format"""
-    nanoconf_config = config.Config(cfg_file="tests/data/rizza.nconf")
-    
-    # Test that nanoconf configuration loads properly
-    assert nanoconf_config.RIZZA.value == BASE_VALUE
-    assert nanoconf_config.RIZZA.list == BASE_LIST
-    assert nanoconf_config.RIZZA.dict == BASE_DICT
+def test_positive_picoconf_load():
+    """Test loading configuration using picoconf format."""
+    picoconf_config = config.Config(cfg_file="tests/data/rizza.pconf")
+    assert picoconf_config.RIZZA.value == BASE_VALUE
+    assert picoconf_config.RIZZA.list == BASE_LIST
+    assert picoconf_config.RIZZA.dict == BASE_DICT
