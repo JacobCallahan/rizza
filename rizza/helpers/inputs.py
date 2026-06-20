@@ -36,7 +36,7 @@ def genetic_known(config, entity="Organization"):
     """Attempt to create a known entity and return the id"""
     from rizza.genetic_tester import GeneticEntityTester
 
-    if not config.RIZZA["GENETICS"]["ALLOW DEPENDENCIES"]:
+    if not config.RIZZA["GENETICS"]["ALLOW_DEPENDENCIES"]:
         return None
     gtester = GeneticEntityTester(config, entity, "create")
     if not gtester._load_test():
@@ -51,23 +51,23 @@ def genetic_unknown(config, entity="Organization", max_generations=None):
     from rizza.genetic_tester import GeneticEntityTester
 
     if (
-        not config.RIZZA["GENETICS"]["ALLOW RECURSION"]
-        or not config.RIZZA["GENETICS"]["ALLOW DEPENDENCIES"]
+        not config.RIZZA["GENETICS"]["ALLOW_RECURSION"]
+        or not config.RIZZA["GENETICS"]["ALLOW_DEPENDENCIES"]
     ):
         return None
 
     if not max_generations:
-        max_generations = config.RIZZA["GENETICS"]["MAX RECURSIVE GENERATIONS"]
+        max_generations = config.RIZZA["GENETICS"]["MAX_RECURSIVE_GENERATIONS"]
 
-    config.RIZZA["GENETICS"]["recursion depth"] = config.RIZZA["GENETICS"].get(
-        "recursion depth", 0
+    config.RIZZA["GENETICS"]["recursion_depth"] = config.RIZZA["GENETICS"].get(
+        "recursion_depth", 0
     )
     if (
-        config.RIZZA["GENETICS"]["recursion depth"]
-        >= config.RIZZA["GENETICS"]["MAX RECURSIVE DEPTH"]
+        config.RIZZA["GENETICS"]["recursion_depth"]
+        >= config.RIZZA["GENETICS"]["MAX_RECURSIVE_DEPTH"]
     ):
         logger.warning("Reached max recursion depth.")
-        config.RIZZA["GENETICS"]["recursion depth"] -= 1
+        config.RIZZA["GENETICS"]["recursion_depth"] -= 1
         return 1
 
     logger.info(f"Attempting to create {entity}...")
@@ -75,5 +75,5 @@ def genetic_unknown(config, entity="Organization", max_generations=None):
     if not gtester._load_test():
         gtester.run(save_only_passed=True)
     logger.info("Resuming parent task.")
-    config.RIZZA["GENETICS"]["recursion depth"] -= 1
+    config.RIZZA["GENETICS"]["recursion_depth"] -= 1
     return gtester.run_best()
