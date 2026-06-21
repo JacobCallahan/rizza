@@ -75,26 +75,22 @@ class GeneticEntityTester:
         self.test_name = "{} {} {}".format(
             self.entity, self.method, "negative" if self.seek_bad else "positive"
         )
-        # If for some reason, the genetic config wasn't populated
-        if not self.config.RIZZA.get("GENETICS", None):
-            # try to load it again
-            self.config._load_genetics()
         if not self.population_count:
-            self.population_count = self.config.RIZZA["GENETICS"]["POPULATION COUNT"]
+            self.population_count = self.config.RIZZA["GENETICS"]["POPULATION_COUNT"]
         if not self.max_generations:
-            self.max_generations = self.config.RIZZA["GENETICS"]["MAX GENERATIONS"]
+            self.max_generations = self.config.RIZZA["GENETICS"]["MAX_GENERATIONS"]
 
         # cli overrides
         if self.max_recursive_generations:
-            self.config.RIZZA["GENETICS"][
-                "MAX RECURSIVE GENERATIONS"
-            ] = self.max_recursive_generations
+            self.config.RIZZA["GENETICS"]["MAX_RECURSIVE_GENERATIONS"] = (
+                self.max_recursive_generations
+            )
         if self.disable_dependencies:
-            self.config.RIZZA["GENETICS"]["ALLOW DEPENDENCIES"] = False
+            self.config.RIZZA["GENETICS"]["ALLOW_DEPENDENCIES"] = False
         if self.disable_recursion:
-            self.config.RIZZA["GENETICS"]["ALLOW RECURSION"] = False
+            self.config.RIZZA["GENETICS"]["ALLOW_RECURSION"] = False
         if self.max_recursive_depth:
-            self.config.RIZZA["GENETICS"]["MAX RECURSIVE DEPTH"] = self.max_recursive_depth
+            self.config.RIZZA["GENETICS"]["MAX_RECURSIVE_DEPTH"] = self.max_recursive_depth
 
         # pull_entities() and pull_methods() are stubbed due to Nailgun removal.
         # These lines handle the resulting behavior.
@@ -267,8 +263,8 @@ class GeneticEntityTester:
 
     def run_best(self):
         """Pull the best saved test, if any, run it, and return the id"""
-        self.config.RIZZA["GENETICS"]["ALLOW RECURSION"] = False
-        self.config.RIZZA["GENETICS"]["MAX GENERATIONS"] = 1
+        self.config.RIZZA["GENETICS"]["ALLOW_RECURSION"] = False
+        self.config.RIZZA["GENETICS"]["MAX_GENERATIONS"] = 1
         test = self._load_test()
         if test:
             test = self._genes_to_task(test)

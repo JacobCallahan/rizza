@@ -1,5 +1,5 @@
 """Tests for rizza.helpers.misc."""
-from rizza import misc
+from rizza.helpers import misc
 
 TEST_DICT = {1: 2, "3": "4", "five": [6, "7", "eight"], 9: {10: "eleven"}}
 
