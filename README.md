@@ -1,93 +1,142 @@
 # rizza
 An increasingly intelligent method to test RH Satellite.
 
-Installation
-------------
-```pip install .```
-or
-```python setup.py install```
+## Installation
 
-Rizza will add a 'rizza' directory to your home directory, as well as a config directory with example config.
-After installation copy/rename the example configuration, located in ~/rizza/config/ to ~/rizza/config/rizza.yaml
+```
+pip install .
+```
 
-Usage
------
-```rizza [-h] {brute,genetic,config,list,test}```
+Rizza creates a `~/rizza/` directory on first run, including a `config/` subdirectory for your configuration files.
 
-Brute Force Testing
--------------------
-Rizza's most basic, and time consuming, operation is a brute force method of testing entities. It will try every combination of an entity's methods, fields, arguments, and available input methods.
-It is highly recommended that you limit the scope of this kind of test with --max-field, --max-inputs, and the exclude options available. An unlimited test can easily generate trillions of combinations and will likely take longer than the lifecycle of your product.
--i, --input and -o, --output use relative paths only.
-**Note:** Using --async will load all tests into memory, so it is advised to limit the numbers to tests by either breaking them up into separate files, or limiting the scope of the methods and fields.
+## Configuration
 
-**Examples:**
-```rizza brute --help```
+Rizza uses [picoconf](https://github.com/JacobCallahan/picoconf) `.pconf` files. Copy the example files from `config/` to `~/rizza/config/` and fill in your values:
 
-```rizza brute -e Product -o tester.txt --max-fields 2 --max-inputs 1 --method-exclude raw search read get payload --async```
+```
+~/rizza/config/
+    rizza.pconf       # top-level settings, imports the files below
+    genetics.pconf    # genetic algorithm tuning
+    connection.pconf  # target host credentials
+```
 
-```rizza brute -i 10tests.txt -l stdout```
+**`connection.pconf`**
+```yaml
+_envar_prefix: rizza_connection
+HOSTNAME: satellite.example.com
+USERNAME: admin
+PASSWORD: changeme
+```
 
-Genetic Algorithm-Based Testing
--------------------------------
-Rizza is able to test entities (via their methods) using genetic algorithms to evolve toward a positive or negative goal. You can adjust the scoring criteria in config/rizza.yaml.
-Rizza, by default, will recursively try to create entities it both does and doesn't know how to, in order to resolve dependencies. You can limit or turn this off both in the config or at run-time with cli args. Note that this recursive process adds a significant amount of time.
-Once a test completes, it is saved in ~/rizza/data/genetic_tests/
+**`genetics.pconf`**
+```yaml
+_envar_prefix: rizza_genetics
+POPULATION_COUNT: 100
+MAX_GENERATIONS: 10000
+# ... see config/genetics.pconf.example for all options
+```
 
-**Examples:**
-```rizza genetic --help```
+**`rizza.pconf`**
+```yaml
+_envar_prefix: rizza
+_import:
+  - genetics.pconf
+  - connection.pconf
+APIX_LIB_PATH: ~/rizza/apix_generated.py
+LOG_LEVEL: info
+LOG_PATH: logs/rizza.log
+```
 
-```rizza genetic -e Organization -m create```
+### Runtime overrides via environment variables
 
-```rizza genetic -e Organization -m create --max-generations 100 --seek-bad --fresh --disable-recursion --async```
+Each config file owns a prefix. Individual keys can be overridden at runtime without touching any file:
 
-Configuration
--------------
-Rizza's main configuration file is located in config/rizza.yaml. After cloning, you will need to copy the example file to rizza.yaml. Most of these configurations have CLI overrides, and there are even some limited support for environment variables (SATHOST, SATUSER, SATPASS, CONFILE).
-Additionally, there is support for modifying some configuration options through rizza's cli.
+```bash
+# Override connection settings
+export rizza_connection_HOSTNAME=prod-satellite.example.com
+export rizza_connection_PASSWORD=secret
 
-**Examples:**
-```rizza config --help```
+# Override genetics settings
+export rizza_genetics_MAX_GENERATIONS=500
+export rizza_genetics_POPULATION_COUNT=50
 
-```rizza config nailgun -p demo```
+# Override top-level settings
+export rizza_LOG_LEVEL=debug
+```
 
-```rizza config nailgun --show```
+## Usage
 
-List
-----
-Rizza can tell you all the information it knows about your product plugin using the list command. These results are currently unfiltered, so will show anything that meets rizza's criteria for what constitutes an entity.
+```
+rizza [-h] {genetic,config,list,test}
+```
 
-**Examples:**
-```rizza list entities```
+### Genetic Algorithm Testing
 
-```rizza list methods -e Organization```
+Rizza uses genetic algorithms to evolve toward a successful (or deliberately failing) API call for a given entity and method. By default it will recursively resolve entity dependencies. Completed tests are saved to `~/rizza/data/genetic_tests/`.
 
-Test
-----
-Rizza is also able to test itself, using pytest. This is mainly useful for testing your container images, to verify everything is working before you begin using rizza.
-You can even pass in pytest args by adding the --args flag.
-**Examples:**
-```rizza test```
+```bash
+rizza genetic --help
 
-```rizza test --args=-v```
+# Basic usage
+rizza genetic -e Organization -m create
 
-Docker
-------
-Rizza is also available with automatic builds on dockerhub.
-You can either pull down the latest, or a specific released version.
-Additionally, you can build your own image locally. You will want to mount the local rizza directory to provide your configuration and keep any data rizza creates.
+# Seek a bad result, skip dependency resolution, run async
+rizza genetic -e Organization -m create --seek-bad --run-async
 
-**Examples:**
-```docker build -t rizza .```
-or
-```docker pull jacobcallahan/rizza```
+# Run against all known entities
+rizza genetic -e All --run-async --async-limit 20
 
-```docker run -it rizza brute --help```
+# Prune stale passing tests
+rizza genetic -e Organization --prune
+```
 
-```docker run -it -v $(pwd):/root/rizza/:Z rizza brute -e Product -o docker.txt --max-fields 2 --max-inputs 1 --method-exclude raw search read get payload```
+### Config
 
-```docker run --rm -v $(pwd):/root/rizza/:Z jacobcallahan/rizza genetic -e Organization```
+Inspect the active configuration:
 
-Note
-----
-This project only explicitly supports python 3.6+
+```bash
+rizza config view
+```
+
+### List
+
+Inspect what rizza knows about the loaded API plugin:
+
+```bash
+rizza list entities
+rizza list methods -e Organization
+rizza list fields -e Organization
+rizza list args -e Organization -m create
+```
+
+### Test
+
+Run rizza's own test suite (useful for verifying a container image or dev environment):
+
+```bash
+rizza test
+rizza test --args=-v
+rizza test --args=tests/test_genetic_tester.py
+```
+
+## Docker
+
+```bash
+docker build -t rizza .
+# or
+docker pull jacobcallahan/rizza
+
+# Mount your local rizza directory to provide config and persist data
+docker run --rm -v $(pwd):/root/rizza/:Z rizza genetic -e Organization -m create
+
+# Override connection at runtime — no config file edit needed
+docker run --rm \
+  -e rizza_connection_HOSTNAME=satellite.example.com \
+  -e rizza_connection_PASSWORD=secret \
+  -v $(pwd):/root/rizza/:Z \
+  rizza genetic -e Organization -m create
+```
+
+## Requirements
+
+Python 3.10+

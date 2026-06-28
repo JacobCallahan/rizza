@@ -1,8 +1,10 @@
 """A utility that tries saved genetic tests and removes those failing"""
 import asyncio
+import logging
 
-from logzero import logger
 import yaml
+
+logger = logging.getLogger(__name__)
 
 from rizza import entity_tester, genetic_tester
 

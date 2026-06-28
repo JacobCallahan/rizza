@@ -1,9 +1,8 @@
 """Main module for rizza's interface."""
-from pathlib import Path
+import contextlib
+import logging
 import sys
 
-from fauxfactory import gen_uuid
-from logzero import logger
 import pytest
 from rich import print as rprint
 from rich.syntax import Syntax
@@ -12,9 +11,10 @@ import yaml
 
 from rizza import genetic_tester
 from rizza.entity_tester import EntityTester
-from rizza.helpers import prune
+from rizza.helpers import prune as prune_helper
 from rizza.helpers.config import Config
-from rizza.task_manager import AsyncTaskManager, TaskManager
+
+logger = logging.getLogger(__name__)
 
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 
@@ -24,110 +24,6 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 def cli(ctx):
     """An increasingly intelligent automated product tester."""
     ctx.obj = Config()
-
-
-@cli.command()
-@click.option(
-    "-e",
-    "--entities",
-    type=str,
-    multiple=True,
-    help="The name of the entity(s) you want to test (Product; All).",
-)
-@click.option(
-    "-o", "--output-path", type=click.Path(), help="The file path to write the test tasks to."
-)
-@click.option(
-    "-i", "--import-path", type=click.Path(), help="The file path to exported test tasks."
-)
-@click.option(
-    "-l",
-    "--log-name",
-    type=str,
-    default=f"session{gen_uuid()[:8]}.log",
-    show_default=True,
-    help="The file name to write test results to.",
-)
-@click.option("--max-fields", type=int, help="The maximum number of entity fields to use.")
-@click.option("--max-inputs", type=int, help="The maximum number of input methods to use.")
-@click.option(
-    "--field-exclude",
-    type=str,
-    multiple=True,
-    help="One or more fields to exclude from brute force testing. (e.g. 'label id')",
-)
-@click.option(
-    "--method-exclude",
-    type=str,
-    multiple=True,
-    help=(
-        "One or more methods to exclude from brute force testing. "
-        "(e.g. 'raw search read get payload')"
-    ),
-)
-@click.option("--run-async", is_flag=True, help="Run tests asynchronously.")
-@click.option(
-    "--async-limit",
-    type=int,
-    default=100,
-    show_default=True,
-    help="The maximum number of tests to run asynchronously.",
-)
-@click.option("--debug", is_flag=True, help="Enable debug logging level.")
-@click.pass_context
-def brute(
-    ctx,
-    entities,
-    output_path,
-    import_path,
-    log_name,
-    max_fields,
-    max_inputs,
-    field_exclude,
-    method_exclude,
-    run_async,
-    async_limit,
-    debug,
-):
-    """Run the brute force testing."""
-    conf = ctx.obj
-    # Create a pseudo-args object for compatibility with existing conf.load_cli_args
-    args_dict = {
-        "entities": entities,
-        "output_path": output_path,
-        "import_path": import_path,
-        "log_name": log_name,
-        "max_fields": max_fields,
-        "max_inputs": max_inputs,
-        "field_exclude": field_exclude,
-        "method_exclude": method_exclude,
-        "run_async": run_async,
-        "async_limit": async_limit,
-        "debug": debug,
-    }
-    conf.load_cli_args(type("Args", (), args_dict), command=True)
-    conf.init_logger(
-        path=conf.base_dir.joinpath(f"logs/brute/{log_name}"),
-        level="debug" if debug else None,
-    )
-
-    if import_path:
-        if run_async:
-            AsyncTaskManager(import_path, async_limit).run_tests()
-        else:
-            tests = TaskManager.import_tasks(Path(import_path))
-            TaskManager.run_tests(tests=tests)
-    else:
-        for entity_name in entities:
-            e_tester = EntityTester(entity_name)
-            e_tester.prep(field_exclude=list(field_exclude), method_exclude=list(method_exclude))
-            tests = e_tester.brute_force(max_fields=max_fields, max_inputs=max_inputs)
-            if output_path:
-                TaskManager.export_tasks(path=Path(output_path), tasks=tests)
-            elif run_async:
-                AsyncTaskManager(tests, async_limit).run_tests()
-            else:
-                TaskManager.run_tests(tests=tests)
 
 
 @cli.command()
@@ -146,16 +42,6 @@ def brute(
     show_default=True,
     help="The name of the method you want to test (create).",
 )
-@click.option("--population-count", type=int, help="The number of organisms in each generation.")
-@click.option("--max-generations", type=int, help="The maximum number of generations to run.")
-@click.option(
-    "--max-recursive-generations",
-    type=int,
-    help="The maximum number of recursive generations to run.",
-)
-@click.option(
-    "--max-recursive-depth", type=int, help="Limit recursive dependency resolution depth."
-)
 @click.option(
     "--seek-bad", is_flag=True, help="Used to promote bad results, based on your config."
 )
@@ -163,11 +49,6 @@ def brute(
     "--disable-dependencies",
     is_flag=True,
     help="Stop rizza from creating required entities.",
-)
-@click.option(
-    "--disable-recursion",
-    is_flag=True,
-    help="Stop rizza from attempting to create required entities.",
 )
 @click.option("--run-async", is_flag=True, help="Run tests asynchronously.")
 @click.option(
@@ -183,23 +64,20 @@ def brute(
     is_flag=True,
     help="Remove positive tests that don't pass. Can specify 'All' for entity",
 )
+@click.option("--cleanup", is_flag=True, help="Clean up created entities after test run.")
 @click.option("--debug", is_flag=True, help="Enable debug logging level.")
 @click.pass_context
 def genetic(
     ctx,
     entity,
     method,
-    population_count,
-    max_generations,
-    max_recursive_generations,
-    max_recursive_depth,
     seek_bad,
     disable_dependencies,
-    disable_recursion,
     run_async,
     async_limit,
     fresh,
-    prune_flag,  # renamed from prune to avoid conflict with helpers.prune
+    prune,
+    cleanup,
     debug,
 ):
     """Use genetic algorithms to learn how to use an entity's method."""
@@ -207,58 +85,46 @@ def genetic(
     args_dict = {
         "entity": entity,
         "method": method,
-        "population_count": population_count,
-        "max_generations": max_generations,
-        "max_recursive_generations": max_recursive_generations,
-        "max_recursive_depth": max_recursive_depth,
         "seek_bad": seek_bad,
         "disable_dependencies": disable_dependencies,
-        "disable_recursion": disable_recursion,
         "run_async": run_async,
         "async_limit": async_limit,
         "fresh": fresh,
-        "prune": prune_flag,
+        "prune": prune,
+        "cleanup": cleanup,
         "debug": debug,
     }
     conf.load_cli_args(type("Args", (), args_dict), command=True)
 
-    if prune_flag:
+    if prune:
         conf.init_logger(
             path=conf.base_dir.joinpath("logs/prune.log"),
             level="debug" if debug else None,
         )
         if run_async and entity == "All":
-            prune.async_genetic_prune(conf, entity, async_limit)
+            prune_helper.async_genetic_prune(conf, entity, async_limit)
         else:
-            prune.genetic_prune(conf, entity)
+            prune_helper.genetic_prune(conf, entity)
     elif entity == "All":
+        conf.init_connection()
         genetic_tester.run_all_entities(
             debug=debug,
             async_mode=run_async,
             config=conf,
             entity=entity,
             method=method,
-            population_count=population_count,
-            max_generations=max_generations,
-            max_recursive_generations=max_recursive_generations,
-            max_recursive_depth=max_recursive_depth,
             disable_dependencies=disable_dependencies,
-            disable_recursion=disable_recursion,
             seek_bad=seek_bad,
             fresh=fresh,
             max_running=async_limit,
         )
     elif run_async:
+        conf.init_connection()
         gtester = genetic_tester.AsyncGeneticEntityTester(
             config=conf,
             entity=entity,
             method=method,
-            population_count=population_count,
-            max_generations=max_generations,
-            max_recursive_generations=max_recursive_generations,
-            max_recursive_depth=max_recursive_depth,
             disable_dependencies=disable_dependencies,
-            disable_recursion=disable_recursion,
             seek_bad=seek_bad,
             fresh=fresh,
             max_running=async_limit,
@@ -268,17 +134,17 @@ def genetic(
             level="debug" if debug else None,
         )
         gtester.run()
+        if cleanup:
+            from rizza import apix_loader
+
+            apix_loader.get_satellite_class()().clean_session()
     else:
+        conf.init_connection()
         gtester = genetic_tester.GeneticEntityTester(
             config=conf,
             entity=entity,
             method=method,
-            population_count=population_count,
-            max_generations=max_generations,
-            max_recursive_generations=max_recursive_generations,
-            max_recursive_depth=max_recursive_depth,
             disable_dependencies=disable_dependencies,
-            disable_recursion=disable_recursion,
             seek_bad=seek_bad,
             fresh=fresh,
         )
@@ -287,37 +153,64 @@ def genetic(
             level="debug" if debug else None,
         )
         gtester.run()
+        if cleanup:
+            from rizza import apix_loader
+
+            apix_loader.get_satellite_class()().clean_session()
 
 
 @cli.group()
 @click.pass_context
 def config(ctx):
     """Manage rizza configurations."""
-    pass  # ctx.obj (Config) is already set from the main cli group
+    pass
 
 
 @config.command()
-@click.option("--path", type=click.Path(), help="The configuration file path to use.")
-@click.option("--clear", is_flag=True, help="Clear existing configuration.")
-@click.option("--show", is_flag=True, help="Show existing configuration.")
+@click.argument("chunk", required=False, default=None)
 @click.pass_context
-def rizza(ctx, path, clear, show):
-    """Configure rizza settings."""
+def view(ctx, chunk):
+    """View the full config or a specific chunk (e.g. genetics.criteria.pass)."""
     conf = ctx.obj
-    args_dict = {
-        "project": "rizza",
-        "path": path,
-        "clear": clear,
-        "show": show,
-    }
-    conf.load_cli_args(type("Args", (), args_dict))
-
-    if show:
-        # conf.yaml_print(conf.RIZZA)
-        yaml_string = yaml.dump(conf.RIZZA)
+    try:
+        value = conf.get_chunk(chunk)
+    except KeyError as e:
+        click.echo(str(e), err=True)
+        return
+    if isinstance(value, dict):
+        yaml_string = yaml.dump(value, default_flow_style=False)
         rprint(Syntax(yaml_string, "yaml", theme="native", line_numbers=True))
-    if clear:
-        conf.clear_rizza()
+    else:
+        rprint(value)
+
+
+@config.command(name="set")
+@click.argument("chunk")
+@click.argument("value")
+@click.pass_context
+def config_set(ctx, chunk, value):
+    """Set a config value by chunk path (e.g. connection.hostname myhost.example.com)."""
+    conf = ctx.obj
+    try:
+        conf.set_chunk(chunk, value)
+    except KeyError as e:
+        click.echo(str(e), err=True)
+        return
+    click.echo(f"Set {chunk} = {yaml.safe_load(str(value))!r}")
+
+
+@config.command(name="init")
+@click.option("--force", is_flag=True, help="Overwrite existing config files.")
+@click.pass_context
+def config_init(ctx, force):
+    """Initialize config files from bundled examples."""
+    conf = ctx.obj
+    result = conf.init_config(force=force)
+    if result["copied"]:
+        click.echo(f"Created: {', '.join(result['copied'])}")
+    if result["skipped"]:
+        skipped = ", ".join(result["skipped"])
+        click.echo(f"Skipped (already exist): {skipped} (use --force to overwrite)")
 
 
 @cli.command(name="list")  # Renamed to avoid conflict with Python's list
@@ -337,6 +230,12 @@ def list_cmd(ctx, subject, entity, method):
         "method": method,
     }
     conf.load_cli_args(type("Args", (), args_dict))
+    from rizza import apix_loader
+
+    lib_path = getattr(conf.rizza, "apix_lib_path", None)
+    if lib_path:
+        with contextlib.suppress(FileNotFoundError):
+            apix_loader.get_apix_module(path=lib_path)
     _list_subject(subject, entity, method)
 
 
@@ -444,8 +343,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.warning("Rizza stopped by user.")
     except Exception as err:
-        # Log the error using logzero
-        logger.error(f"An unexpected error occurred: {err}", exc_info=True)
-        # Optionally, print a user-friendly message to stderr
+        logger.exception(f"An unexpected error occurred: {err}")
         click.echo(f"Error: {err}", err=True)
         sys.exit(1)

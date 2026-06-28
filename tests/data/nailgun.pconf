@@ -1,5 +1,0 @@
-LABEL: rizza
-SATHOST: https://localhost
-SATPASS: test_pass
-SATUSER: test_user
-VERIFY: false

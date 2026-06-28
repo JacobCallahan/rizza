@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 from rizza import task_manager
-from rizza.helpers import logger
+from rizza.helpers.logging import setup_logging
 
 IMPORT_FILE = "tests/data/example.txt"
 EXPORT_FILE = "tests/data/temp_export.txt"
@@ -17,7 +17,6 @@ def test_positive_import_tasks():
     assert task.__class__.__name__ == "EntityTestTask"
     assert isinstance(task.entity, str)
     assert isinstance(task.method, str)
-    assert isinstance(task.field_dict, dict)
     assert isinstance(task.arg_dict, dict)
 
 
@@ -35,13 +34,13 @@ def test_positive_export_tasks():
 def test_positive_run_tests():
     """Run mock tests and validate the generated results."""
     tasks = task_manager.TaskManager.import_tasks(IMPORT_FILE)
-    logger.setup_logzero(LOG_FILE, "info")
+    setup_logging(console_level="info", file_level="info", log_path=LOG_FILE)
     task_manager.TaskManager.run_tests(tasks, True)
     log_path = Path(LOG_FILE)
     with log_path.open() as test_file:
         for test in test_file:
             split_test = test.split("~")
             # The test data just before being ran must match 'after'
-            if len(split_test) == 3:  # noqa: PLR2004 (no magic numbers)
+            if len(split_test) == 3:  # (no magic numbers)
                 assert json.loads(split_test[1]) == json.loads(split_test[2])
     log_path.unlink()

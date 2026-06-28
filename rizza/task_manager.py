@@ -2,13 +2,15 @@
 import asyncio
 from contextlib import suppress
 import json
+import logging
 from pathlib import Path
 
 import attr
-from logzero import logger
 
 from rizza.entity_tester import EntityTestTask
 from rizza.helpers.misc import json_serial
+
+logger = logging.getLogger(__name__)
 
 
 @attr.s()
@@ -34,11 +36,16 @@ class TaskManager:
         :params path: Path to the save file. If none, a name will be created.
         :params tasks: Can either be a list of tasks, or a task generator.
         """
-        output = []
+        lines = []
         for task in tasks:
             logger.debug(f"Exporting: {task}")
-            output.append(attr.asdict(task, filter=lambda attr, value: attr.name != "config"))
-        Path(path).write_text(json.dumps(output, default=json_serial))
+            lines.append(
+                json.dumps(
+                    attr.asdict(task, filter=lambda attr, value: attr.name != "config"),
+                    default=json_serial,
+                )
+            )
+        Path(path).write_text("\n".join(lines) + "\n" if lines else "")
         logger.info("Finished exporting.")
 
     @staticmethod

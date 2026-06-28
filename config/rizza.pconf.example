@@ -1,0 +1,7 @@
+_envar_prefix: rizza
+_import:
+  - genetics.pconf
+  - connection.pconf
+apix_lib_path: ~/rizza/libs/satellite.py
+log_level: info
+log_path: logs/rizza.log
