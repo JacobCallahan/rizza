@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "rizza"
 description = "An increasingly intelligent automated product tester."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = ["rizza", "machine learning", "api", "cli", "testing"]
 authors = [{ name = "Jacob J Callahan", email = "jacob.callahan05@gmail.com" }]
 classifiers = [
@@ -18,11 +18,11 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
     "attrs",
     "fauxfactory",
-    "logzero",
     "picoconf",
     "pyyaml",
     "pytest",
@@ -83,8 +83,15 @@ select = [
 ]
 ignore = [
     "B019",    # lru_cache can lead to memory leaks - acceptable tradeoff
+    "E402",    # module-level imports not at top - intentional post-logger ordering
+    "G001",    # logging uses str.format - acceptable style
+    "G004",    # logging uses f-string - acceptable style
+    "PLR0912", # too many branches - acceptable tradeoff
+    "PLR0915", # too many statements - acceptable tradeoff
     "PLR0911", # too many return statements - acceptable tradeoff
     "PLR0913", # too many arguments in function call - acceptable tradeoff
+    "PLR2004", # magic value comparisons - acceptable in context
+    "PLW0603", # global statement - intentional module-level caching
     "PT004",   # pytest underscrore prefix for non-return fixtures
     "PT005",   # pytest no underscrore prefix for return fixtures
     "RET503",  # missing explicit return

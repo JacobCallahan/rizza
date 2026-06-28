@@ -1,45 +1,12 @@
 """A module that provides miscellaneous helper functions."""
 from inspect import signature
-from itertools import combinations, product
 from json import loads
+import logging
 from random import randint
 
-from logzero import logger
 from requests import HTTPError
 
-
-def combination_list(base=None, max_fields=None):
-    """Create a list of all combinations from the source list."""
-    if not base:
-        return []
-
-    if not max_fields:
-        max_fields = len(base)
-
-    combo_list = []
-    for _ in range(1, max_fields + 1):
-        combo_list.extend([combo for combo in combinations(base, _)])
-
-    return combo_list
-
-
-def product_list(base=None, max_fields=None):
-    """Create a list of all products from the source list."""
-    if not base or max_fields == 0:
-        return []
-
-    if not max_fields:
-        max_fields = len(base)
-
-    return [_ for _ in product(base, repeat=max_fields)]
-
-
-def map_field_inputs(fields, input_list):
-    """Map a tuple of fields to a list of input tuples."""
-    return [
-        {field: inpt for field, inpt in zip(fields, input_tupe, strict=True)}
-        for input_tupe in input_list
-    ]
+logger = logging.getLogger(__name__)
 
 
 def dictionary_exclusion(indict=None, exclude=None):
@@ -102,8 +69,15 @@ def dict_search(needle, haystack):
     return False
 
 
-def field_to_entity(field):
-    """Takes in a field name and tries to find an entity that matches"""
+def field_to_entity(field, field_info=None):
+    """Takes in a field name and tries to find an entity that matches.
+
+    :param field_info: Optional parsed annotation dict. If it contains an 'entity'
+        key, that entity name is returned directly instead of guessing.
+    """
+    if field_info and field_info.get("entity"):
+        return field_info["entity"]
+
     from rizza.entity_tester import EntityTester
 
     entity_list = EntityTester.pull_entities().keys()
@@ -118,10 +92,10 @@ def get_default_type(func):
     return [type(parameters[key].default) for key in parameters if parameters[key].default]
 
 
-def form_input(name, methods, field, config):
+def form_input(name, methods, field, config, field_info=None):
     """Take in a function name, get information, call it, return result"""
     if "genetic" in name:
-        entity = field_to_entity(field)
+        entity = field_to_entity(field, field_info)
         if entity:
             return methods.get(name, lambda: name)(config, entity)
         return "~"
