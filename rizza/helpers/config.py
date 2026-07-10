@@ -19,8 +19,9 @@ DEFAULT_CONFIG = {
         "max_generations": 10000,
         "allow_dependencies": True,
         "allow_recursion": True,
-        "max_recursive_generations": 10000,
-        "max_recursive_depth": 10,
+        "max_recursive_generations": 5,
+        "max_recursive_depth": 3,
+        "explore_verify_count": 2,
         "tournament_size": 3,
         "elite_percentage": 5,
         "immigration_rate": 5,
@@ -37,15 +38,44 @@ DEFAULT_CONFIG = {
             "BadValueError": -500,
             "TypeError": -200,
         },
+        "agentic": {
+            "enabled": False,
+            "max_candidates_per_generation": 5,
+            "max_steps_per_candidate": 5,
+            "bucket_similarity_threshold": 0.85,
+            "use_embeddings": False,
+            "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+            "hf_token": "",
+            "policy": {
+                "alpha": 0.1,
+                "gamma": 0.95,
+                "epsilon": 0.3,
+                "epsilon_decay": 0.995,
+            },
+            "reward": {
+                "success": 20,
+                "improved": 5,
+                "new_error": 3,
+                "same": -1,
+                "regressed": -2,
+                "server_error": -5,
+                "targeted_success": 8,
+            },
+            "validation_override_prob": 0.5,
+            "validation_override_decay": 0.995,
+            "recommender_batch_size": 8,
+            "recommender_epsilon_decay_per_episode": 0.998,
+        },
     },
     "connection": {
         "hostname": "",
         "username": "admin",
         "password": "changeme",
     },
-    "apix_lib_path": "~/rizza/apix_generated.py",
+    "apix_lib_path": "~/rizza/libs/satellite.py",
     "log_path": "logs/rizza.log",
     "log_level": "info",
+    "log_file_level": "debug",
 }
 
 
@@ -78,29 +108,8 @@ class Config:
 
     def load_cli_args(self, args=None, command=False):
         """Pull in any relevant settings from argparse"""
-        if "project" in dir(args):
-            if args.project == "rizza" and not args.show and not args.clear:
-                logger.debug("Set rizza configuration.")
-        elif command:
-            self.rizza.last = {k: v for k, v in vars(args).items() if not k.startswith("_")}
-            self.save_config()
-            logger.debug("Command arguments saved to last.pconf")
-
-    def save_config(self, cfg_file=None):
-        """Save the LAST command arguments to last.pconf in the config directory."""
-        last_data = getattr(self.rizza, "last", None)
-        if last_data is None:
-            return
-
-        last_dir = Path(cfg_file).parent if cfg_file else Path(self.cfg_dir)
-        last_file = last_dir / "last.pconf"
-        last_dir.mkdir(parents=True, exist_ok=True)
-
-        last_dict = last_data.to_dict() if hasattr(last_data, "to_dict") else last_data
-        yaml_str = yaml.dump({"last": last_dict}, default_flow_style=False)
-        last_file.write_text(yaml_str)
-
-        logger.info(f"Saved last configuration to: {last_file}")
+        if "project" in dir(args) and args.project == "rizza" and not args.show and not args.clear:
+            logger.debug("Set rizza configuration.")
 
     def init_connection(self):
         """Initialize the apix API connection using connection config values."""
@@ -117,10 +126,11 @@ class Config:
         APIConnection(hostname=hostname, auth=f"{username}:{password}")
         logger.debug(f"API connection initialized for host: {hostname}")
 
-    def init_logger(self, path=None, level=None):
+    def init_logger(self, path=None, level=None, file_level=None):
         path = path or self.rizza.log_path
         level = level or self.rizza.log_level
-        setup_logging(console_level=level, file_level=level, log_path=path)
+        file_level = file_level or self.rizza.log_file_level
+        setup_logging(console_level=level, file_level=file_level, log_path=path)
 
     def clear_rizza(self):
         """Reset rizza configuration to defaults in memory.
@@ -192,14 +202,24 @@ class Config:
 
         target.write_text(yaml.dump(data, default_flow_style=False))
 
-    def init_config(self, force=False):
-        """Copy .pconf.example files from the project config/ dir to ~/rizza/config/."""
+    def init_config(self, force=False, chunk=None):
+        """Copy .pconf.example files from the project config/ dir to ~/rizza/config/.
+
+        If chunk is given (one of 'rizza', 'genetics', 'connection'), only that
+        file is copied; otherwise all example files are copied.
+        """
+        chunk_map = {"rizza": "rizza.pconf", **IMPORTED_CHUNKS}
         src_dir = Path(__file__).parent.parent.parent / "config"
         dest_dir = Path(self.cfg_dir)
         dest_dir.mkdir(parents=True, exist_ok=True)
         copied = []
         skipped = []
-        for example in src_dir.glob("*.pconf.example"):
+        if chunk:
+            target = chunk_map[chunk]
+            examples = [src_dir / f"{target}.example"]
+        else:
+            examples = list(src_dir.glob("*.pconf.example"))
+        for example in examples:
             dest = dest_dir / example.name.removesuffix(".example")
             if dest.exists() and not force:
                 skipped.append(dest.name)
@@ -210,6 +230,23 @@ class Config:
         if rizza_pconf.exists():
             self.rizza = PicoConf(str(rizza_pconf))
         return {"copied": copied, "skipped": skipped}
+
+    def save_checkpoint(self, entity: str, method: str):
+        """Write the current exploration position to data/explore_checkpoint as Entity::method."""
+        checkpoint = self.base_dir / "data" / "explore_checkpoint"
+        checkpoint.parent.mkdir(parents=True, exist_ok=True)
+        checkpoint.write_text(f"{entity}::{method}")
+
+    def load_checkpoint(self) -> "tuple[str, str] | tuple[None, None]":
+        """Read the last exploration checkpoint, returning (entity, method) or (None, None)."""
+        checkpoint = self.base_dir / "data" / "explore_checkpoint"
+        if not checkpoint.exists():
+            return None, None
+        text = checkpoint.read_text().strip()
+        if "::" in text:
+            entity, method = text.split("::", 1)
+            return entity or None, method or None
+        return None, None
 
     @staticmethod
     def yaml_print(in_dict=None):

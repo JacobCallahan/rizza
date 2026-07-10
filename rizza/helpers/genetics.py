@@ -107,6 +107,7 @@ class Population:
         elite_percentage=5,
         immigration_rate=5,
         available_genes=None,
+        required_genes=None,
     ):
         """Evolve the population one generation.
 
@@ -117,6 +118,7 @@ class Population:
         :param immigration_rate: Percent of population replaced with fresh random organisms.
         :param available_genes: Optional list of all valid values for genes[0] (param names);
             enables variable-length add/remove operators during mutation.
+        :param required_genes: Optional set of param names that must never be removed.
         """
         self.sort_population()
         best_score = self.population[0].points
@@ -167,7 +169,11 @@ class Population:
             parent2 = self._tournament_select(tournament_size)
             new_org = Organism(genes=self._breed_pair(parent1.genes, parent2.genes))
             if self.mutate and random.random() <= mutation_chance:
-                new_org.mutate(type_pools=type_pools, available_genes=available_genes)
+                new_org.mutate(
+                    type_pools=type_pools,
+                    available_genes=available_genes,
+                    required_genes=required_genes,
+                )
             next_generation.append(new_org)
 
         # Immigrants: fully random organisms injected each generation
@@ -207,7 +213,14 @@ class Organism:
             self.genes = self.genes[:]
             random.shuffle(self.genes)
 
-    def mutate(self, gene_base=None, mutation_chance=0.1, type_pools=None, available_genes=None):
+    def mutate(
+        self,
+        gene_base=None,
+        mutation_chance=0.1,
+        type_pools=None,
+        available_genes=None,
+        required_genes=None,
+    ):
         """Randomly mutate genes.
 
         :param gene_base: Optional fallback pool for replacement mutation values.
@@ -216,6 +229,7 @@ class Organism:
             of the inputs sublist in 2-list gene structures.
         :param available_genes: Optional list of all valid param names; enables variable-length
             add/remove operators for 2-list gene structures.
+        :param required_genes: Optional set of param names that must never be removed.
         """
         if isinstance(self.genes[0], list):
             param_names = self.genes[0] if len(self.genes) >= 2 else []
@@ -236,30 +250,44 @@ class Organism:
                             param_names = self.genes[0]
 
                 if random.random() < 0.1 and len(self.genes[0]) > 1:
-                    # Remove: drop a random pair; floor at length 1
-                    idx = random.randint(0, len(self.genes[0]) - 1)
-                    self.genes[0].pop(idx)
-                    self.genes[1].pop(idx)
-                    param_names = self.genes[0]
+                    # Remove: drop a random non-required pair; floor at length 1
+                    removable = [
+                        i
+                        for i in range(len(self.genes[0]))
+                        if not required_genes or self.genes[0][i] not in required_genes
+                    ]
+                    if removable:
+                        idx = random.choice(removable)
+                        self.genes[0].pop(idx)
+                        self.genes[1].pop(idx)
+                        param_names = self.genes[0]
 
-            for i in range(len(self.genes)):
-                if not self.genes[i]:
-                    continue
-                if random.random() < mutation_chance:
-                    g1 = random.choice(range(len(self.genes[i])))
-                    g2 = random.choice(range(len(self.genes[i])))
-                    self.genes[i][g1], self.genes[i][g2] = (
-                        self.genes[i][g2],
-                        self.genes[i][g1],
-                    )
+            # For 2-list genes (param_names + input_methods): only mutate genes[1].
+            # genes[0] coverage is handled by the ADD/REMOVE operators above.
+            # For 3+ sublists (generic GA), use the original swap/replace logic.
+            if len(self.genes) == 2 and self.genes[1]:
+                idx = random.randint(0, len(self.genes[1]) - 1)
+                if type_pools and param_names:
+                    param = param_names[idx] if idx < len(param_names) else None
+                    pool = type_pools.get(param, self.genes[1]) if param else self.genes[1]
+                    self.genes[1][idx] = random.choice(pool) if pool else self.genes[1][idx]
                 else:
-                    idx = random.randint(0, len(self.genes[i]) - 1)
-                    if i == 1 and type_pools and param_names:
-                        param = param_names[idx] if idx < len(param_names) else None
-                        pool = type_pools.get(param, self.genes[i]) if param else self.genes[i]
-                        self.genes[i][idx] = random.choice(pool) if pool else self.genes[i][idx]
+                    self.genes[1][idx] = random.choice(self.genes[1])
+            else:
+                for i in range(len(self.genes)):
+                    if not self.genes[i]:
+                        continue
+                    if random.random() < mutation_chance:
+                        g1 = random.choice(range(len(self.genes[i])))
+                        g2 = random.choice(range(len(self.genes[i])))
+                        self.genes[i][g1], self.genes[i][g2] = (
+                            self.genes[i][g2],
+                            self.genes[i][g1],
+                        )
                     else:
-                        self.genes[i][idx] = random.choice(self.genes[i])
+                        self.genes[i][random.randint(0, len(self.genes[i]) - 1)] = random.choice(
+                            self.genes[i]
+                        )
         elif random.random() < mutation_chance:
             gene1 = random.choice(range(len(self.genes)))
             gene2 = random.choice(range(len(self.genes)))

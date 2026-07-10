@@ -49,7 +49,7 @@ def setup_logging(console_level=logging.INFO, file_level=None, log_path=None):
         file_int = resolve_log_level(file_level)
         path = Path(log_path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        file_handler = RotatingFileHandler(path, maxBytes=int(1e9), backupCount=3)
+        file_handler = RotatingFileHandler(path, maxBytes=1 * 1024 * 1024, backupCount=5)
         file_handler.setLevel(file_int)
         file_handler.setFormatter(
             logging.Formatter(

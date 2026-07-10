@@ -2,7 +2,6 @@
 from pathlib import Path
 import tempfile
 
-from picoconf import PicoConf
 import pytest
 import yaml
 
@@ -32,27 +31,19 @@ def test_positive_load_config():
     assert test_config.rizza.dict == BASE_DICT
 
 
-def test_positive_save_last():
-    """Verify that LAST command arguments are saved to last.pconf
+def test_save_and_load_checkpoint(tmp_path):
+    """save_checkpoint writes Entity::method; load_checkpoint parses it back."""
+    cfg = config.Config(cfg_dir=str(tmp_path))
+    cfg.base_dir = tmp_path
+    cfg.save_checkpoint("ActivationKey", "create")
+    assert cfg.load_checkpoint() == ("ActivationKey", "create")
 
-    Steps:
-        1. Create a new config class instance.
-        2. Set a LAST value.
-        3. Save the config (writes last.pconf).
-        4. Load last.pconf independently and verify contents.
 
-    Verify: LAST contents match what was saved
-    """
-    last_file = Path("tests/data/last.pconf")
-    base_config = config.Config(cfg_dir="tests/data/")
-    last_args = {"entity": "Product", "method": "create"}
-    base_config.rizza.last = last_args
-    base_config.save_config()
-    assert last_file.exists()
-    last_config = PicoConf(str(last_file))
-    assert last_config.last.entity == last_args["entity"]
-    assert last_config.last.method == last_args["method"]
-    last_file.unlink()
+def test_load_checkpoint_missing(tmp_path):
+    """load_checkpoint returns (None, None) when no checkpoint file exists."""
+    cfg = config.Config(cfg_dir=str(tmp_path))
+    cfg.base_dir = tmp_path
+    assert cfg.load_checkpoint() == (None, None)
 
 
 def test_positive_defaults_loaded():

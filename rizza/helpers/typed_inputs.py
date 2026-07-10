@@ -66,18 +66,24 @@ def generate_method_args(entity_class, method_name, mode="typed"):
     for arg in args:
         if arg in annotations:
             field_info = _parse_single_annotation(annotations[arg])
-            compatible = get_compatible_inputs(field_info, all_inputs)
+            compatible = get_compatible_inputs(field_info, all_inputs, field_name=arg)
             result[arg] = random.choice(compatible) if compatible else random.choice(all_inputs)
         else:
             result[arg] = random.choice(all_inputs)
     return result
 
 
-def get_compatible_inputs(field_info, all_input_names):
+_INT_ONLY_NAMES = frozenset({"per_page", "page", "limit", "offset", "max_results"})
+_INT_INPUTS = ("gen_small_integer",)
+_URL_INPUTS = ("gen_url",)
+
+
+def get_compatible_inputs(field_info, all_input_names, field_name=None):
     """Return input method names whose output type matches the field's expected type.
 
     :param field_info: Parsed annotation dict with at least a 'type' key.
     :param all_input_names: List of all available input method name strings.
+    :param field_name: Optional parameter name; used to narrow candidates via heuristics.
     :returns: List of compatible input method name strings.
     """
     if not field_info:
@@ -90,8 +96,19 @@ def get_compatible_inputs(field_info, all_input_names):
         return [n for n in all_input_names if "genetic" in n]
 
     if field_info.get("choices"):
-        # Literal type — no standard fauxfactory function applies well
         return all_input_names
+
+    # Field-name heuristics (exploration only — validation takes genes at face value)
+    if field_name:
+        name_lower = field_name.lower()
+        if name_lower.endswith(("_url", "_uri")):
+            hits = [n for n in all_input_names if n.startswith(_URL_INPUTS)]
+            if hits:
+                return hits
+        if name_lower in _INT_ONLY_NAMES:
+            hits = [n for n in all_input_names if n.startswith(_INT_INPUTS)]
+            if hits:
+                return hits
 
     type_prefix_map = {
         "str": [

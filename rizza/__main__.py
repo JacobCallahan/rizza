@@ -1,10 +1,13 @@
 """Main module for rizza's interface."""
 import contextlib
+import datetime
+import json
 import logging
+from pathlib import Path
 import sys
 
-import pytest
 from rich import print as rprint
+from rich.rule import Rule
 from rich.syntax import Syntax
 import rich_click as click
 import yaml
@@ -13,6 +16,7 @@ from rizza import genetic_tester
 from rizza.entity_tester import EntityTester
 from rizza.helpers import prune as prune_helper
 from rizza.helpers.config import Config
+from rizza.helpers.logging import console
 
 logger = logging.getLogger(__name__)
 
@@ -31,82 +35,98 @@ def cli(ctx):
     "-e",
     "--entity",
     type=str,
-    required=True,
-    help="The name of the entity you want to test (Organization).",
+    default="_all",
+    show_default=True,
+    help="Entity to explore (_all for every entity).",
 )
 @click.option(
     "-m",
     "--method",
     type=str,
-    default="create",
+    default="_new",
     show_default=True,
-    help="The name of the method you want to test (create).",
+    help="Method to explore (_new for untested, _all for every method).",
 )
-@click.option(
-    "--seek-bad", is_flag=True, help="Used to promote bad results, based on your config."
-)
+@click.option("--seek-bad", is_flag=True, help="Promote bad results, based on your config.")
 @click.option(
     "--disable-dependencies",
     is_flag=True,
     help="Stop rizza from creating required entities.",
 )
-@click.option("--run-async", is_flag=True, help="Run tests asynchronously.")
+@click.option("--no-async", "no_async", is_flag=True, help="Run tests synchronously.")
 @click.option(
     "--async-limit",
     type=int,
     default=100,
     show_default=True,
-    help="The maximum number of tests to run asynchronously. (default is 100)",
+    help="Maximum number of tests to run concurrently.",
 )
 @click.option("--fresh", is_flag=True, help="Don't attempt to load in saved results.")
+@click.option("--from-entity", help="Continue exploring alphabetically from the specified entity.")
 @click.option(
-    "--prune",
+    "-c",
+    "--continue",
+    "continue_run",
     is_flag=True,
-    help="Remove positive tests that don't pass. Can specify 'All' for entity",
+    default=False,
+    help="Resume from the last checkpointed entity saved in last.pconf.",
 )
-@click.option("--cleanup", is_flag=True, help="Clean up created entities after test run.")
+@click.option(
+    "--last-failed",
+    is_flag=True,
+    default=False,
+    help="Re-explore entity/method pairs recorded in ~/rizza/validation/last_failed.json.",
+)
 @click.option("--debug", is_flag=True, help="Enable debug logging level.")
 @click.pass_context
-def genetic(
+def explore(
     ctx,
     entity,
     method,
     seek_bad,
     disable_dependencies,
-    run_async,
+    no_async,
     async_limit,
     fresh,
-    prune,
-    cleanup,
+    from_entity,
+    continue_run,
+    last_failed,
     debug,
 ):
-    """Use genetic algorithms to learn how to use an entity's method."""
-    conf = ctx.obj
-    args_dict = {
-        "entity": entity,
-        "method": method,
-        "seek_bad": seek_bad,
-        "disable_dependencies": disable_dependencies,
-        "run_async": run_async,
-        "async_limit": async_limit,
-        "fresh": fresh,
-        "prune": prune,
-        "cleanup": cleanup,
-        "debug": debug,
-    }
-    conf.load_cli_args(type("Args", (), args_dict), command=True)
+    """Use genetic algorithms to explore an entity's methods."""
+    from rizza.helpers.method_resolver import resolve_methods
 
-    if prune:
-        conf.init_logger(
-            path=conf.base_dir.joinpath("logs/prune.log"),
-            level="debug" if debug else None,
-        )
-        if run_async and entity == "All":
-            prune_helper.async_genetic_prune(conf, entity, async_limit)
-        else:
-            prune_helper.genetic_prune(conf, entity)
-    elif entity == "All":
-        conf.init_connection()
+    conf = ctx.obj
+    run_async = not no_async
+
+    conf.init_connection()
+
+    # _all entity: delegate to run_all_entities with method-mode support
+    if entity == "_all":
+        if last_failed:
+            failed_file = conf.base_dir / "validation" / "last_failed.json"
+            if not failed_file.exists():
+                click.echo("No last_failed.json found. Run `rizza validate` first.", err=True)
+                sys.exit(1)
+            failed_map = json.loads(failed_file.read_text())
+            genetic_tester.run_failed_entities(
+                failed_map,
+                debug=debug,
+                async_mode=run_async,
+                config=conf,
+                disable_dependencies=disable_dependencies,
+                seek_bad=seek_bad,
+                fresh=fresh,
+                max_running=async_limit,
+            )
+            return
+
+        from_method = None
+        if continue_run:
+            from_entity, from_method = conf.load_checkpoint()
+            if not from_entity:
+                click.echo("No checkpoint found — starting from the beginning.")
+
         genetic_tester.run_all_entities(
             debug=debug,
             async_mode=run_async,
@@ -117,46 +137,276 @@ def genetic(
             seek_bad=seek_bad,
             fresh=fresh,
             max_running=async_limit,
+            from_entity=from_entity,
+            from_method=from_method,
         )
-    elif run_async:
-        conf.init_connection()
-        gtester = genetic_tester.AsyncGeneticEntityTester(
-            config=conf,
-            entity=entity,
-            method=method,
-            disable_dependencies=disable_dependencies,
-            seek_bad=seek_bad,
-            fresh=fresh,
-            max_running=async_limit,
-        )
+        return
+
+    # Single entity: resolve methods here
+    pulled_entities = EntityTester.pull_entities()
+    entity_cls = pulled_entities.get(entity)
+    if not entity_cls:
+        click.echo(f"Entity '{entity}' not found.", err=True)
+        sys.exit(1)
+
+    methods = resolve_methods(conf, entity, entity_cls, method, seek_bad)
+    if not methods:
+        click.echo(f"All methods for '{entity}' already explored. Nothing to run.")
+        return
+
+    explored = 0
+    for method_name in methods:
+        if run_async:
+            gtester = genetic_tester.AsyncGeneticEntityTester(
+                config=conf,
+                entity=entity,
+                method=method_name,
+                disable_dependencies=disable_dependencies,
+                seek_bad=seek_bad,
+                fresh=fresh,
+                max_running=async_limit,
+            )
+        else:
+            gtester = genetic_tester.GeneticEntityTester(
+                config=conf,
+                entity=entity,
+                method=method_name,
+                disable_dependencies=disable_dependencies,
+                seek_bad=seek_bad,
+                fresh=fresh,
+            )
         conf.init_logger(
             path=conf.base_dir.joinpath(f"logs/genetic/{gtester.test_name}.log"),
             level="debug" if debug else None,
         )
         gtester.run()
-        if cleanup:
-            from rizza import apix_loader
+        explored += 1
+    logger.info(f"Finished exploring {entity}! ({explored}/{len(methods)} methods attempted)")
 
-            apix_loader.get_satellite_class()().clean_session()
+
+def _format_test_label(test_name: str) -> str:
+    """Convert 'Entity method mode' → 'Entity::method:mode' for display."""
+    parts = test_name.split(" ", 2)
+    if len(parts) == 3:
+        return f"{parts[0]}::{parts[1]}:{parts[2]}"
+    return test_name
+
+
+def _sanitize(obj):
+    """Recursively make an object safe for yaml.safe_dump / json.dumps.
+
+    Converts tuples to lists and bytes to decoded strings so that the YAML
+    output contains no Python-specific tags (!!python/tuple, !!binary, etc.)
+    and no awkward single-quoted escapes.
+    """
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list | tuple):
+        return [_sanitize(v) for v in obj]
+    if isinstance(obj, bytes):
+        try:
+            return obj.decode("utf-8", errors="replace")
+        except Exception:
+            return repr(obj)
+    if not isinstance(obj, str | int | float | bool | type(None)):
+        return str(obj)
+    return obj
+
+
+def _write_validation_report(
+    conf, results, report_path, report_format, entity="_all", method="_all"
+):
+    """Write a validation report to disk.
+
+    :param conf: Config instance (used to derive product name and default path).
+    :param results: List of validation result dicts from validate_tests().
+    :param report_path: Override path string, or None to auto-generate.
+    :param report_format: "yaml" or "json".
+    :param entity: Entity filter used during validation (affects auto filename).
+    :param method: Method filter used during validation (affects auto filename).
+    :returns: Path object where the report was written.
+    """
+    import json as _json
+
+    _apix_path = getattr(conf.rizza, "apix_lib_path", "") or ""
+    product = Path(_apix_path).stem or "satellite"
+    date_str = datetime.date.today().strftime("%d%b%y")
+
+    if report_path is None:
+        out_dir = conf.base_dir / "validation"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        parts = [product]
+        if entity not in ("_all", None):
+            parts.append(entity)
+        if method not in ("_all", "_new", None):
+            parts.append(method)
+        stem = "-".join(parts)
+        dest = out_dir / f"{stem}-{date_str}.{report_format}"
     else:
-        conf.init_connection()
-        gtester = genetic_tester.GeneticEntityTester(
-            config=conf,
-            entity=entity,
-            method=method,
-            disable_dependencies=disable_dependencies,
-            seek_bad=seek_bad,
-            fresh=fresh,
-        )
-        conf.init_logger(
-            path=conf.base_dir.joinpath(f"logs/genetic/{gtester.test_name}.log"),
-            level="debug" if debug else None,
-        )
-        gtester.run()
-        if cleanup:
-            from rizza import apix_loader
+        dest = Path(report_path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.suffix == ".json":
+            report_format = "json"
+        elif dest.suffix in (".yaml", ".yml"):
+            report_format = "yaml"
 
-            apix_loader.get_satellite_class()().clean_session()
+    passed_count = sum(1 for r in results if r["passed"])
+    payload = _sanitize(
+        {
+            "product": product,
+            "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+            "summary": {
+                "total": len(results),
+                "passed": passed_count,
+                "failed": len(results) - passed_count,
+            },
+            "tests": results,
+        }
+    )
+
+    if report_format == "json":
+        dest.write_text(_json.dumps(payload, indent=2, default=str))
+    else:
+        yaml.safe_dump(payload, dest.open("w"), default_flow_style=False, allow_unicode=True)
+
+    return dest
+
+
+def _print_validation_summary(results, prune, report_dest=None):
+    """Print a rich results table and summary after validation completes."""
+    if not results:
+        console.print("\n[dim]No saved tests found.[/dim]")
+        return
+
+    # Results table
+    console.print()
+    max_label = max(len(_format_test_label(r["test_name"])) for r in results)
+    for r in results:
+        label = _format_test_label(r["test_name"])
+        if r["passed"]:
+            console.print(f"  [green]{label:<{max_label}}[/green]  PASS")
+        else:
+            pruned_tag = "  [dim][pruned][/dim]" if prune else ""
+            console.print(f"  [red]{label:<{max_label}}[/red]  FAIL{pruned_tag}")
+
+    # Separator + summary
+    console.print(Rule(style="dim"))
+    passed = sum(1 for r in results if r["passed"])
+    failed = len(results) - passed
+    total = len(results)
+
+    parts = []
+    if passed:
+        parts.append(f"[bold green]{passed} passed[/bold green]")
+    if failed:
+        parts.append(f"[bold red]{failed} failed[/bold red]")
+    if prune and failed:
+        parts.append(f"[dim]{failed} pruned[/dim]")
+    parts.append(f"[dim]{total} total[/dim]")
+    console.print("  " + "  [dim]·[/dim]  ".join(parts))
+
+    if report_dest:
+        console.print(f"  [dim]Report → {report_dest}[/dim]")
+    console.print()
+
+
+@cli.command()
+@click.option(
+    "-e",
+    "--entity",
+    type=str,
+    default="_all",
+    show_default=True,
+    help="Entity to validate (_all for every entity).",
+)
+@click.option(
+    "-m",
+    "--method",
+    type=str,
+    default="_all",
+    show_default=True,
+    help="Method to validate (_all for every saved method).",
+)
+@click.option("--prune", is_flag=True, help="Remove tests that fail validation.")
+@click.option("--no-async", "no_async", is_flag=True, help="Run validation synchronously.")
+@click.option(
+    "--async-limit",
+    type=int,
+    default=100,
+    show_default=True,
+    help="Maximum number of validations to run concurrently.",
+)
+@click.option("--cleanup", is_flag=True, help="Clean up created entities after validation.")
+@click.option(
+    "--report-path",
+    type=click.Path(),
+    default=None,
+    help="Override report output path (default: ~/rizza/validation/<product>-DDMMMYY.yaml).",
+)
+@click.option(
+    "--report-format",
+    type=click.Choice(["yaml", "json"]),
+    default="yaml",
+    show_default=True,
+    help="Report file format.",
+)
+@click.option("--debug", is_flag=True, help="Enable debug logging level.")
+@click.pass_context
+def validate(
+    ctx,
+    entity,
+    method,
+    prune,
+    no_async,
+    async_limit,
+    cleanup,
+    report_path,
+    report_format,
+    debug,
+):
+    """Re-run saved tests to confirm they still pass. Optionally prune failures."""
+    conf = ctx.obj
+    run_async = not no_async
+
+    conf.init_logger(
+        path=conf.base_dir.joinpath("logs/validate.log"),
+        level="debug" if debug else None,
+    )
+    conf.init_connection()
+
+    # Count tests ahead of time so the progress bar has a meaningful total
+    total = prune_helper.count_pending_tests(conf, entity, method)
+
+    progress = genetic_tester._make_progress()
+    conf._progress = progress
+    conf._validate_task = progress.add_task(
+        "[bold]Validating[/bold]", total=total if total > 0 else 1
+    )
+
+    with progress:
+        if run_async and entity == "_all":
+            results = prune_helper.async_validate_tests(
+                conf, entity=entity, method=method, prune=prune, async_limit=async_limit
+            )
+        else:
+            results = prune_helper.validate_tests(conf, entity=entity, method=method, prune=prune)
+
+    conf._progress = None
+    conf._validate_task = None
+
+    # Write report (always), then print summary
+    report_dest = None
+    if results:
+        report_dest = _write_validation_report(
+            conf, results, report_path, report_format, entity, method
+        )
+
+    _print_validation_summary(results, prune, report_dest)
+
+    if cleanup:
+        from rizza import apix_loader
+
+        apix_loader.get_satellite_class()().clean_session()
 
 
 @cli.group()
@@ -200,12 +450,17 @@ def config_set(ctx, chunk, value):
 
 
 @config.command(name="init")
+@click.argument("chunk", required=False, type=click.Choice(["rizza", "genetics", "connection"]))
 @click.option("--force", is_flag=True, help="Overwrite existing config files.")
 @click.pass_context
-def config_init(ctx, force):
-    """Initialize config files from bundled examples."""
+def config_init(ctx, chunk, force):
+    """Initialize config files from bundled examples.
+
+    Optionally pass a CHUNK name (rizza, genetics, connection) to reinitialize
+    only that file, leaving the others untouched.
+    """
     conf = ctx.obj
-    result = conf.init_config(force=force)
+    result = conf.init_config(force=force, chunk=chunk)
     if result["copied"]:
         click.echo(f"Created: {', '.join(result['copied'])}")
     if result["skipped"]:
@@ -213,17 +468,23 @@ def config_init(ctx, force):
         click.echo(f"Skipped (already exist): {skipped} (use --force to overwrite)")
 
 
-@cli.command(name="list")  # Renamed to avoid conflict with Python's list
+@cli.command(name="list")
 @click.argument(
     "subject", type=click.Choice(["entities", "methods", "fields", "args", "input-methods"])
 )
 @click.option("-e", "--entity", type=str, help="The name of the entity you want to filter by.")
 @click.option("-m", "--method", type=str, help="The name of the method you want to filter by.")
+@click.option("--new", "show_new", is_flag=True, help="Show only methods without a passing test.")
+@click.option(
+    "--explored",
+    "show_explored",
+    is_flag=True,
+    help="Show only methods that already have a passing test.",
+)
 @click.pass_context
-def list_cmd(ctx, subject, entity, method):
+def list_cmd(ctx, subject, entity, method, show_new, show_explored):
     """List out information about entities and inputs."""
     conf = ctx.obj
-    # Create a pseudo-args object
     args_dict = {
         "subject": subject,
         "entity": entity,
@@ -236,17 +497,17 @@ def list_cmd(ctx, subject, entity, method):
     if lib_path:
         with contextlib.suppress(FileNotFoundError):
             apix_loader.get_apix_module(path=lib_path)
-    _list_subject(subject, entity, method)
+    _list_subject(conf, subject, entity, method, show_new, show_explored)
 
 
-def _list_subject(subject, entity_name, method_name):
+def _list_subject(conf, subject, entity_name, method_name, show_new=False, show_explored=False):
     """Helper function to handle listing logic for different subjects."""
     if subject == "entities":
         _list_entities()
     elif subject == "input-methods":
         _list_input_methods()
     else:
-        _list_entity_details(subject, entity_name, method_name)
+        _list_entity_details(conf, subject, entity_name, method_name, show_new, show_explored)
 
 
 def _list_entities():
@@ -269,7 +530,7 @@ def _list_input_methods():
         click.echo("No input methods found.")
 
 
-def _list_entity_details(subject, entity_name, method_name):
+def _list_entity_details(conf, subject, entity_name, method_name, show_new, show_explored):
     """List details (methods, fields, args) for a specific entity."""
     pulled_entities = EntityTester.pull_entities()
     if entity_name not in pulled_entities:
@@ -278,24 +539,39 @@ def _list_entity_details(subject, entity_name, method_name):
 
     entity_data = pulled_entities[entity_name]
     if subject == "methods":
-        _list_entity_methods(entity_data, entity_name)
+        _list_entity_methods(conf, entity_data, entity_name, show_new, show_explored)
     elif subject == "fields":
         _list_entity_fields(entity_data, entity_name)
     elif subject == "args":
         _list_method_args(entity_data, entity_name, method_name)
     else:
-        # Should not happen due to click.Choice
         click.echo(f"Unknown subject '{subject}' for entity listing.", err=True)
 
 
-def _list_entity_methods(entity_data, entity_name):
-    """List methods for a given entity."""
-    methods_list = list(EntityTester.pull_methods(entity_data).keys())
-    if methods_list:
-        for item in methods_list:
-            rprint(item)
+def _list_entity_methods(conf, entity_data, entity_name, show_new, show_explored):
+    """List methods for a given entity, with optional new/explored filtering."""
+    if show_new or show_explored:
+        from rizza.helpers.method_resolver import get_explored_methods, get_new_methods
+
+        if show_new:
+            methods_dict = get_new_methods(conf, entity_name, entity_data)
+            label = "untested"
+        else:
+            methods_dict = get_explored_methods(conf, entity_name, entity_data)
+            label = "explored"
+        methods_list = list(methods_dict.keys())
+        if methods_list:
+            for item in methods_list:
+                rprint(item)
+        else:
+            click.echo(f"No {label} methods found for entity '{entity_name}'.")
     else:
-        click.echo(f"No methods found for entity '{entity_name}'.")
+        methods_list = list(EntityTester.pull_methods(entity_data).keys())
+        if methods_list:
+            for item in methods_list:
+                rprint(item)
+        else:
+            click.echo(f"No methods found for entity '{entity_name}'.")
 
 
 def _list_entity_fields(entity_data, entity_name):
@@ -322,24 +598,272 @@ def _list_method_args(entity_data, entity_name, method_name):
         click.echo(f"Method '{method_name}' not found for entity '{entity_name}'.", err=True)
 
 
-@cli.command()
+@cli.group()
+@click.pass_context
+def knowledge(ctx):
+    """Inspect rizza's saved genetic tests and agentic policy knowledge base."""
+    pass
+
+
+@knowledge.command(name="genetic")
+@click.pass_context
+def knowledge_genetic(ctx):
+    """Show saved genetic test results, grouped by entity."""
+    import yaml as _yaml
+
+    conf = ctx.obj
+    data_dir = conf.base_dir / "data" / "genetic_tests"
+    if not data_dir.exists():
+        click.echo("No saved genetic tests found.")
+        return
+    yaml_files = sorted(data_dir.glob("*.yaml"))
+    if not yaml_files:
+        click.echo("No saved genetic tests found.")
+        return
+    rprint(f"\n[bold]Saved Genetic Tests[/bold]  [dim]({data_dir})[/dim]\n")
+    for yaml_file in yaml_files:
+        tests = _yaml.safe_load(yaml_file.read_text()) or {}
+        if not tests:
+            continue
+        entity_name = yaml_file.stem
+        rprint(f"[bold cyan]{entity_name}[/bold cyan]")
+        for test_name, test_data in tests.items():
+            arg_dict = test_data.get("arg_dict", {})
+            rprint(f"  [green]{test_name}[/green]")
+            for k, v in arg_dict.items():
+                rprint(f"    [dim]{k}={v}[/dim]")
+        rprint("")
+
+
+def _q_value_lines(labels, q_values):
+    """Build sorted Q-value display lines with softmax percentages."""
+    import math
+
+    pairs = list(zip(labels, q_values, strict=False))
+    max_q = max(q_values) if q_values else 0.0
+    exp_vals = [math.exp(v - max_q) for v in q_values]
+    exp_sum = sum(exp_vals)
+    pcts = [e / exp_sum * 100.0 for e in exp_vals]
+    combined = [(lbl, qv, pct) for (lbl, qv), pct in zip(pairs, pcts, strict=False)]
+    combined.sort(key=lambda x: x[1], reverse=True)
+    max_label_len = max(len(lbl) for lbl, _, _ in combined) if combined else 0
+    lines = []
+    for lbl, qv, pct in combined:
+        lines.append(f"    {lbl:<{max_label_len}}  {qv:+.2f}" f"  [dim]({pct:.1f}%)[/dim]")
+    return lines
+
+
+def _nn_q_values_from_state_dict(sd, torch):
+    """Reconstruct an MLP from a state_dict and run a zero vector to get baseline Q-values."""
+    from torch import nn
+
+    weight_keys = [k for k in sd if k.endswith(".weight") and len(sd[k].shape) == 2]
+    bias_keys = [k for k in sd if k.endswith(".bias") and len(sd[k].shape) == 1]
+    weight_keys.sort()
+    bias_keys.sort()
+    if not weight_keys:
+        return None
+    layers = []
+    for i, wk in enumerate(weight_keys):
+        out_dim, in_dim = sd[wk].shape
+        linear = nn.Linear(in_dim, out_dim)
+        linear.weight.data = sd[wk]
+        bk = bias_keys[i] if i < len(bias_keys) else None
+        if bk:
+            linear.bias.data = sd[bk]
+        layers.append(linear)
+        if i < len(weight_keys) - 1:
+            layers.append(nn.ReLU())
+    net = nn.Sequential(*layers)
+    net.eval()
+    input_dim = sd[weight_keys[0]].shape[1]
+    with torch.no_grad():
+        return net(torch.zeros(1, input_dim)).squeeze().tolist()
+
+
+def _knowledge_show_qtable(product, interface, data, top, action_labels):
+    """Display Q-table (Tier 1) policy statistics."""
+    import ast as _ast
+
+    epsilon = data.get("epsilon", 0.0)
+    raw_table = data.get("q_table", {})
+    state_count = len(raw_table)
+    rprint(
+        f"[bold cyan]{product}[/bold cyan] / [cyan]{interface}[/cyan]"
+        f"  ·  [dim]Q-Table (Tier 1)[/dim]"
+    )
+    rprint(
+        f"  Epsilon:        [yellow]{epsilon:.3f}[/yellow]"
+        f"  [dim]({epsilon * 100:.1f}% exploration remaining)[/dim]"
+    )
+    rprint(f"  States learned: [yellow]{state_count}[/yellow]")
+    if state_count:
+        all_q = list(raw_table.values())
+        n_actions = len(all_q[0]) if all_q else 0
+        if n_actions:
+            mean_q = [sum(q[i] for q in all_q) / len(all_q) for i in range(n_actions)]
+            labels = action_labels[:n_actions]
+            rprint(f"  Q-values:      [dim](mean across {state_count} states)[/dim]")
+            for line in _q_value_lines(labels, mean_q):
+                rprint(line)
+    if state_count and top > 0:
+        decoded = []
+        for k_str, q_vals in raw_table.items():
+            try:
+                key = _ast.literal_eval(k_str)
+                decoded.append((key, q_vals))
+            except Exception:
+                pass
+        decoded.sort(key=lambda x: max(x[1]), reverse=True)
+        rprint(f"\n  [dim]Top {min(top, len(decoded))} states by best Q-value:[/dim]")
+        for key, q_vals in decoded[:top]:
+            status, err_cls, text = key[0], key[1], key[2]
+            label = f"{status} · {err_cls} · \"{text[:40]}{'...' if len(text) > 40 else ''}\""
+            rprint(f"    [dim]{label}[/dim]")
+            best_idx = q_vals.index(max(q_vals))
+            parts_row = []
+            for i, (lbl, val) in enumerate(zip(action_labels, q_vals, strict=False)):
+                fmt = (
+                    f"[bold green]{lbl} {val:+.2f} ★[/bold green]"
+                    if i == best_idx
+                    else f"{lbl} {val:+.2f}"
+                )
+                parts_row.append(fmt)
+            rprint(f"      {'   '.join(parts_row)}")
+    rprint("")
+
+
+def _knowledge_show_gen_recommender(product, interface, policy_file):
+    """Display generator recommender (NLP) statistics."""
+    rprint(
+        f"[bold cyan]{product}[/bold cyan] / [cyan]{interface}[/cyan]"
+        f"  ·  [dim]Generator Recommender (NLP)[/dim]"
+    )
+    try:
+        import torch as _torch
+
+        checkpoint = _torch.load(policy_file, map_location="cpu", weights_only=False)
+        epsilon = checkpoint.get("epsilon", 0.0)
+        gen_names = checkpoint.get("generator_names", [])
+        sd = checkpoint.get("state_dict", {})
+        weight_shapes = [list(v.shape) for v in sd.values() if len(v.shape) == 2]
+        dims = (
+            str(weight_shapes[0][1]) + " → " + " → ".join(str(s[0]) for s in weight_shapes)
+            if weight_shapes
+            else "unknown"
+        )
+        rprint(
+            f"  Epsilon:       [yellow]{epsilon:.3f}[/yellow]"
+            f"  [dim]({epsilon * 100:.1f}% exploration remaining)[/dim]"
+        )
+        rprint(f"  Architecture:  [dim]{dims}[/dim]")
+        rprint(f"  Generators:    [yellow]{len(gen_names)}[/yellow] known")
+        q_vals = _nn_q_values_from_state_dict(sd, _torch)
+        if q_vals and gen_names and len(q_vals) == len(gen_names):
+            rprint("  Q-values:      [dim](baseline output scores)[/dim]")
+            for line in _q_value_lines(gen_names, q_vals):
+                rprint(line)
+    except ImportError:
+        rprint("  [dim](torch not installed — install rizza[agentic] to read weights)[/dim]")
+    except Exception as e:
+        rprint(f"  [red]Error reading weights: {e}[/red]")
+    rprint("")
+
+
+def _knowledge_show_dqn(product, interface, policy_file):
+    """Display DQN action policy statistics."""
+    _action_labels = ["SWAP", "ADD", "DROP", "NOOP", "TARGETED_SWAP"]
+    rprint(
+        f"[bold cyan]{product}[/bold cyan] / [cyan]{interface}[/cyan]"
+        f"  ·  [dim]Action Policy (deep RL)[/dim]"
+    )
+    try:
+        import torch as _torch
+
+        checkpoint = _torch.load(policy_file, map_location="cpu", weights_only=True)
+        epsilon = checkpoint.get("epsilon", 0.0)
+        sd = checkpoint.get("state_dict", {})
+        shapes = [list(v.shape) for v in sd.values() if len(v.shape) == 2]
+        dims = (
+            " → ".join(str(s[1]) for s in shapes) + f" → {shapes[-1][0]}" if shapes else "unknown"
+        )
+        n_actions = shapes[-1][0] if shapes else len(_action_labels)
+        known_actions = _action_labels[:n_actions]
+        rprint(
+            f"  Epsilon:       [yellow]{epsilon:.3f}[/yellow]"
+            f"  [dim]({epsilon * 100:.1f}% exploration remaining)[/dim]"
+        )
+        rprint(f"  Architecture:  [dim]{dims}[/dim]")
+        rprint(
+            f"  Actions:       [yellow]{n_actions}[/yellow] known"
+            f"  [dim]({', '.join(known_actions)})[/dim]"
+        )
+        q_vals = _nn_q_values_from_state_dict(sd, _torch)
+        if q_vals and len(q_vals) == n_actions:
+            rprint("  Q-values:      [dim](baseline output scores)[/dim]")
+            for line in _q_value_lines(known_actions, q_vals):
+                rprint(line)
+    except ImportError:
+        rprint("  [dim](torch not installed — install rizza[agentic] to read weights)[/dim]")
+    except Exception as e:
+        rprint(f"  [red]Error reading weights: {e}[/red]")
+    rprint("")
+
+
+@knowledge.command(name="agentic")
 @click.option(
-    "--args",
-    "pytest_args",  # renamed to avoid conflict
-    type=str,
-    multiple=True,
-    help='pytest args to pass in. (e.g. --args="-r a" --args="tests/specific_test.py")',
+    "--top",
+    type=int,
+    default=5,
+    show_default=True,
+    help="Number of top learned states to display (Q-table only).",
 )
-def test(pytest_args):
-    """Run pytest tests."""
-    pyargs = list(pytest_args) if pytest_args else ["-q"]
-    errno = pytest.cmdline.main(args=pyargs)
-    sys.exit(errno)
+@click.pass_context
+def knowledge_agentic(ctx, top):
+    """Show agentic RL policy stats, grouped by product and interface."""
+    import json as _json
+
+    conf = ctx.obj
+    agentic_dir = conf.base_dir / "data" / "agentic"
+    if not agentic_dir.exists():
+        click.echo("No agentic knowledge base found.")
+        return
+
+    policy_files = (
+        list(agentic_dir.rglob("qtable.json"))
+        + list(agentic_dir.rglob("dqn.pt"))
+        + list(agentic_dir.rglob("gen_recommender.pt"))
+    )
+    if not policy_files:
+        click.echo("No agentic knowledge base found.")
+        return
+
+    action_labels = ["SWAP", "ADD", "DROP", "NOOP", "TARGETED_SWAP"]
+    rprint(f"\n[bold]Agentic Knowledge Base[/bold]  [dim]({agentic_dir})[/dim]\n")
+
+    for policy_file in sorted(policy_files):
+        rel_parts = policy_file.relative_to(agentic_dir).parts
+        product = rel_parts[0] if len(rel_parts) > 2 else "unknown"
+        interface = rel_parts[1] if len(rel_parts) > 2 else "unknown"
+
+        if policy_file.suffix == ".json":
+            try:
+                data = _json.loads(policy_file.read_text())
+            except Exception as e:
+                rprint(f"  [red]Error reading {policy_file.name}: {e}[/red]")
+                continue
+            _knowledge_show_qtable(product, interface, data, top, action_labels)
+
+        elif policy_file.name == "gen_recommender.pt":
+            _knowledge_show_gen_recommender(product, interface, policy_file)
+
+        elif policy_file.suffix == ".pt":
+            _knowledge_show_dqn(product, interface, policy_file)
 
 
 if __name__ == "__main__":
     try:
-        cli(obj=None)  # obj=None because Config is created in cli's callback and passed via ctx
+        cli(obj=None)
     except KeyboardInterrupt:
         logger.warning("Rizza stopped by user.")
     except Exception as err:

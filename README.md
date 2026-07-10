@@ -67,35 +67,130 @@ export rizza_LOG_LEVEL=debug
 ## Usage
 
 ```
-rizza [-h] {genetic,config,list,test}
+rizza [-h] {explore,validate,config,list}
 ```
 
-### Genetic Algorithm Testing
+### Explore
 
-Rizza uses genetic algorithms to evolve toward a successful (or deliberately failing) API call for a given entity and method. By default it will recursively resolve entity dependencies. Completed tests are saved to `~/rizza/data/genetic_tests/`.
+Uses a genetic algorithm to evolve toward a successful (or deliberately failing) API call for a given entity and method. Completed tests are saved to `~/rizza/data/genetic_tests/`.
+
+By default, `explore` runs against **all entities** (`_all`) and targets only **methods that don't yet have a passing test** (`_new`). Async execution is on by default.
 
 ```bash
-rizza genetic --help
+rizza explore --help
 
-# Basic usage
-rizza genetic -e Organization -m create
+# Run against all entities, all untested methods (default)
+rizza explore
 
-# Seek a bad result, skip dependency resolution, run async
-rizza genetic -e Organization -m create --seek-bad --run-async
+# Explore a specific entity and method
+rizza explore -e Organization -m create
 
-# Run against all known entities
-rizza genetic -e All --run-async --async-limit 20
+# Explore all methods for one entity, including already-passing ones
+rizza explore -e Organization -m _all
 
-# Prune stale passing tests
-rizza genetic -e Organization --prune
+# Seek a failing result
+rizza explore -e Organization -m create --seek-bad
+
+# Skip dependency resolution
+rizza explore -e Organization -m create --disable-dependencies
+
+# Run synchronously
+rizza explore --no-async
+
+# Limit concurrency
+rizza explore --async-limit 20
+
+# Ignore saved results and start fresh
+rizza explore -e Organization -m create --fresh
+```
+
+**Special `--method` values:**
+
+| Value | Meaning |
+|-------|---------|
+| `_new` | Only methods without a saved passing test (default) |
+| `_all` | Every method on the entity |
+| `<name>` | A specific method by name |
+
+**Special `--entity` values:**
+
+| Value | Meaning |
+|-------|---------|
+| `_all` | Every known entity (default) |
+| `<name>` | A specific entity by name |
+
+### Validate
+
+Re-runs saved tests from `~/rizza/data/genetic_tests/` to confirm they still pass. Generates a structured report capturing the test name, the actual values passed to the API, and the response. Async execution is on by default.
+
+```bash
+rizza validate --help
+
+# Validate all saved tests (default)
+rizza validate
+
+# Validate a specific entity
+rizza validate -e Organization
+
+# Validate a specific entity and method
+rizza validate -e Organization -m create
+
+# Remove tests that fail validation
+rizza validate --prune
+
+# Run synchronously
+rizza validate --no-async
+
+# Write report to a custom path
+rizza validate --report-path /tmp/my-report.yaml
+
+# Write report as JSON
+rizza validate --report-format json
+```
+
+**Reports** are auto-saved to `~/rizza/validation/` after every run. The filename reflects the scope of the validation:
+
+| Scope | Filename |
+|-------|---------|
+| All entities | `satellite-01Jul26.yaml` |
+| Specific entity | `satellite-Organization-01Jul26.yaml` |
+| Entity + method | `satellite-Organization-create-01Jul26.yaml` |
+
+Report structure:
+
+```yaml
+product: satellite
+generated_at: "2026-07-01T12:00:00"
+summary:
+  total: 42
+  passed: 38
+  failed: 4
+tests:
+  - test_name: "Organization create positive"
+    entity: Organization
+    method: create
+    mode: positive
+    passed: true
+    arg_dict:
+      name: gen_alphanumeric
+      organization_id: genetic_known
+    resolved_args:
+      name: "AbcDef123"
+      organization_id: "42"
+    response:
+      id: 123
+      name: AbcDef123
 ```
 
 ### Config
 
-Inspect the active configuration:
+Inspect or modify the active configuration:
 
 ```bash
 rizza config view
+rizza config view genetics        # view a specific config chunk
+rizza config set LOG_LEVEL debug  # set a value
+rizza config init                 # write default config files
 ```
 
 ### List
@@ -105,18 +200,11 @@ Inspect what rizza knows about the loaded API plugin:
 ```bash
 rizza list entities
 rizza list methods -e Organization
+rizza list methods -e Organization --new       # only untested methods
+rizza list methods -e Organization --explored  # only methods with passing tests
 rizza list fields -e Organization
 rizza list args -e Organization -m create
-```
-
-### Test
-
-Run rizza's own test suite (useful for verifying a container image or dev environment):
-
-```bash
-rizza test
-rizza test --args=-v
-rizza test --args=tests/test_genetic_tester.py
+rizza list input-methods
 ```
 
 ## Docker
@@ -127,14 +215,14 @@ docker build -t rizza .
 docker pull jacobcallahan/rizza
 
 # Mount your local rizza directory to provide config and persist data
-docker run --rm -v $(pwd):/root/rizza/:Z rizza genetic -e Organization -m create
+docker run --rm -v $(pwd):/root/rizza/:Z rizza explore -e Organization -m create
 
 # Override connection at runtime — no config file edit needed
 docker run --rm \
   -e rizza_connection_HOSTNAME=satellite.example.com \
   -e rizza_connection_PASSWORD=secret \
   -v $(pwd):/root/rizza/:Z \
-  rizza genetic -e Organization -m create
+  rizza explore -e Organization -m create
 ```
 
 ## Requirements

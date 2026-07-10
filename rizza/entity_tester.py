@@ -174,14 +174,18 @@ class EntityTestTask:
     arg_dict = attr.ib(validator=attr.validators.instance_of(dict))
     config = attr.ib(default=None, repr=False)
 
-    def execute(self, mock=False):
+    def execute(self, mock=False, _return_details=False):
         """Execute the task.
 
         :param mock: Return task dict without making real API calls.
-        :returns: Dict with 'pass', 'fail', or 'skipped' key.
+        :param _return_details: If True, return {"result": ..., "resolved_args": ...} instead of
+            the plain result dict. Used by the validation runner to capture actual values.
+        :returns: Dict with 'pass', 'fail', or 'skipped' key (or details dict when
+            _return_details).
         """
         if mock:
-            return attr.asdict(self)
+            result = attr.asdict(self)
+            return {"result": result, "resolved_args": {}} if _return_details else result
 
         imeths = EntityTester.pull_input_methods()
 
@@ -223,20 +227,50 @@ class EntityTestTask:
             entity_inst = entity_cls(**init_args)
             try:
                 result = getattr(entity_inst, self.method)(**method_args)
-            except AttributeError as ae:
-                if "has no attribute 'id'" not in str(ae):
+            except (AttributeError, RuntimeError) as ae:
+                if "id" not in str(ae):
                     raise
-                # Method needs self.id — try to get a real ID via genetic_known
-                from rizza.helpers.inputs import genetic_known
+                logger.debug(
+                    f"{self.entity}.{self.method} requires an entity ID; "
+                    f"attempting dependency resolution"
+                )
+                from rizza.helpers.inputs import get_entity_id
 
-                entity_id = genetic_known(self.config, self.entity)
+                entity_id = get_entity_id(self.config, self.entity)
                 if entity_id and entity_id not in (-1, "~"):
                     entity_inst.id = entity_id
                     result = getattr(entity_inst, self.method)(**method_args)
                 else:
+                    logger.debug(
+                        f"Could not resolve ID for {self.entity} — "
+                        f"run 'rizza genetic -e {self.entity} -m create' first"
+                    )
                     raise
-            return {"pass": result.json() if hasattr(result, "json") else result}
+            if hasattr(result, "ok") and not result.ok:
+                try:
+                    fail_body = result.json()
+                except Exception:
+                    fail_body = getattr(result, "text", str(result))
+                result_dict = {
+                    "fail": {
+                        "HTTPError": {
+                            "response": fail_body,
+                            "status_code": result.status_code,
+                        }
+                    }
+                }
+            elif hasattr(result, "json"):
+                try:
+                    result_dict = {"pass": result.json()}
+                except Exception:
+                    result_dict = {"pass": {"status_code": result.status_code}}
+            else:
+                result_dict = {"pass": result}
         except Exception as e:
             handled = handle_exception(e)
             logger.debug(f"fail: {handled}")
-            return {"fail": handled}
+            result_dict = {"fail": handled}
+
+        if _return_details:
+            return {"result": result_dict, "resolved_args": resolved_args}
+        return result_dict

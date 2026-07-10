@@ -1,6 +1,7 @@
 """A module that provides utilities to test entities via genetic algorithms."""
 
 import asyncio
+import contextvars
 import inspect
 import logging
 import random
@@ -23,6 +24,8 @@ from rizza.helpers.misc import dict_search
 
 logger = logging.getLogger(__name__)
 
+_replay_mode = contextvars.ContextVar("_replay_mode", default=False)
+
 
 def _make_progress():
     return Progress(
@@ -33,6 +36,17 @@ def _make_progress():
         TimeElapsedColumn(),
         console=console,
     )
+
+
+def _safe_str(v):
+    """Return v as-is if it's a JSON-safe scalar/container, else convert to str."""
+    if isinstance(v, str | int | float | bool | type(None) | dict | list):
+        return v
+    return str(v)
+
+
+# Cached result of the agentic-learner import check — avoids repeated warnings.
+_AGENTIC_AVAILABLE = None
 
 
 def _entity_from_param_name(param_name, known_entity_names_lower):
@@ -48,11 +62,18 @@ def _entity_from_param_name(param_name, known_entity_names_lower):
 
 
 def run_all_entities(**kwargs):
-    """Iterate through all known entities and attempt to test them."""
+    """Iterate through all known entities and attempt to test them.
+
+    :param method: "_new", "_all", or a specific method name.
+    """
+    from rizza.helpers.method_resolver import resolve_methods
+
     debug = kwargs.pop("debug")
     async_mode = kwargs.pop("async_mode")
+    method_mode = kwargs.pop("method", "_new")
+    seek_bad = kwargs.get("seek_bad", False)
     if not async_mode:
-        del kwargs["max_running"]
+        kwargs.pop("max_running", None)
 
     pulled_entities = entity_tester.EntityTester.pull_entities()
     if not pulled_entities:
@@ -60,38 +81,145 @@ def run_all_entities(**kwargs):
         return
 
     entity_list = list(pulled_entities)
+    from_entity = kwargs.pop("from_entity")
+    from_method = kwargs.pop("from_method", None)
+    if from_entity:
+        try:
+            entity_list = entity_list[entity_list.index(from_entity) :]
+        except ValueError:
+            logger.warning(f"Entity {from_entity!r} not found — starting from the beginning.")
+            from_method = None
     config = kwargs["config"]
 
     progress = _make_progress()
     config._progress = progress
     entity_task = progress.add_task("[bold]Entities[/bold]", total=len(entity_list))
 
+    explored = 0
     try:
         with progress:
-            for entity in entity_list:
-                kwargs["entity"] = entity
-                progress.update(entity_task, description=f"[bold]Entity:[/bold] {entity}")
-                try:
-                    if async_mode:
-                        gtester = AsyncGeneticEntityTester(**kwargs)
-                    else:
-                        gtester = GeneticEntityTester(**kwargs)
-                except Exception as err:
+            for entity_name in entity_list:
+                entity_cls = pulled_entities[entity_name]
+                progress.update(entity_task, description=f"[bold]Entity:[/bold] {entity_name}")
+                methods = resolve_methods(config, entity_name, entity_cls, method_mode, seek_bad)
+                if not methods:
                     progress.console.print(
-                        f"[yellow]Warning:[/yellow] Unable to create a tester for {entity}: {err}"
+                        f"[dim]Skipping {entity_name}: no methods to explore[/dim]"
                     )
                     progress.advance(entity_task)
                     continue
-                config.init_logger(
-                    path=config.base_dir.joinpath(f"logs/genetic/{gtester.test_name}.log"),
-                    level="debug" if debug else None,
-                )
-                gtester.run()
+                method_list = list(methods)
+                if from_method and entity_name == entity_list[0]:
+                    try:
+                        method_list = method_list[method_list.index(from_method) :]
+                    except ValueError:
+                        logger.warning(
+                            f"Method {from_method!r} not found on {entity_name} — "
+                            "starting from the first method."
+                        )
+                for method_name in method_list:
+                    config.save_checkpoint(entity_name, method_name)
+                    kwargs["entity"] = entity_name
+                    kwargs["method"] = method_name
+                    try:
+                        if async_mode:
+                            gtester = AsyncGeneticEntityTester(**kwargs)
+                        else:
+                            gtester = GeneticEntityTester(**kwargs)
+                    except Exception as err:
+                        progress.console.print(
+                            f"[yellow]Warning:[/yellow] Unable to create a tester for "
+                            f"{entity_name}.{method_name}: {err}"
+                        )
+                        continue
+                    config.init_logger(
+                        path=config.base_dir.joinpath(f"logs/genetic/{gtester.test_name}.log"),
+                        level="debug" if debug else None,
+                    )
+                    gtester.run()
+                    explored += 1
                 progress.advance(entity_task)
     finally:
         config._progress = None
 
-    logger.info("Finished testing all entities!")
+    if explored == 0:
+        logger.info("All methods already explored. Nothing new to run.")
+    else:
+        logger.info(f"Finished testing all entities! ({explored} method runs)")
+
+
+def run_failed_entities(failed_map, **kwargs):
+    """Re-explore entity/method pairs from a last_failed.json map.
+
+    :param failed_map: dict of {entity_name: [method_name, ...]} from last_failed.json.
+    """
+    debug = kwargs.pop("debug", False)
+    async_mode = kwargs.pop("async_mode", True)
+    if not async_mode:
+        kwargs.pop("max_running", None)
+    kwargs.pop("method", None)
+    kwargs.pop("from_entity", None)
+
+    pulled_entities = entity_tester.EntityTester.pull_entities()
+    config = kwargs["config"]
+
+    entity_list = [
+        (name, methods) for name, methods in failed_map.items() if name in pulled_entities
+    ]
+    if not entity_list:
+        logger.warning("No matching entities found in last_failed.json.")
+        return
+
+    progress = _make_progress()
+    config._progress = progress
+    entity_task = progress.add_task("[bold]Entities (failed)[/bold]", total=len(entity_list))
+
+    explored = 0
+    try:
+        with progress:
+            for entity_name, methods in entity_list:
+                entity_cls = pulled_entities[entity_name]
+                progress.update(entity_task, description=f"[bold]Entity:[/bold] {entity_name}")
+                if not methods:
+                    progress.console.print(
+                        f"[dim]Skipping {entity_name}: no failed methods listed[/dim]"
+                    )
+                    progress.advance(entity_task)
+                    continue
+                for method_name in methods:
+                    if not entity_tester.EntityTester.pull_methods(entity_cls).get(method_name):
+                        progress.console.print(
+                            f"[yellow]Warning:[/yellow] Method {method_name!r} not found on "
+                            f"{entity_name}, skipping"
+                        )
+                        continue
+                    kwargs["entity"] = entity_name
+                    kwargs["method"] = method_name
+                    try:
+                        if async_mode:
+                            gtester = AsyncGeneticEntityTester(**kwargs)
+                        else:
+                            gtester = GeneticEntityTester(**kwargs)
+                    except Exception as err:
+                        progress.console.print(
+                            f"[yellow]Warning:[/yellow] Unable to create tester for "
+                            f"{entity_name}.{method_name}: {err}"
+                        )
+                        continue
+                    config.init_logger(
+                        path=config.base_dir.joinpath(f"logs/genetic/{gtester.test_name}.log"),
+                        level="debug" if debug else None,
+                    )
+                    gtester.run()
+                    explored += 1
+                progress.advance(entity_task)
+    finally:
+        config._progress = None
+
+    if explored == 0:
+        logger.info("No failed methods could be re-explored.")
+    else:
+        logger.info(f"Finished re-exploring failed entities! ({explored} method runs)")
 
 
 @attr.s()
@@ -145,14 +273,28 @@ class GeneticEntityTester:
         if self._entity_cls:
             methods = entity_tester.EntityTester.pull_methods(self._entity_cls)
             self._method = methods.get(self.method)
-            self._init_params = [
-                p for p in inspect.signature(self._entity_cls.__init__).parameters if p != "self"
-            ]
+            init_sig = inspect.signature(self._entity_cls.__init__)
+            self._init_params = [p for p in init_sig.parameters if p != "self"]
+            init_required = {
+                name
+                for name, param in init_sig.parameters.items()
+                if name != "self" and param.default is inspect.Parameter.empty
+            }
         else:
             logger.warning(f"GeneticTester: Entity '{self.entity}' not found in apix module.")
             self._entity_cls = None
             self._method = None
             self._init_params = []
+            init_required = set()
+
+        method_required = set()
+        if self._method:
+            method_sig = inspect.signature(self._method)
+            method_required = {
+                name
+                for name, param in method_sig.parameters.items()
+                if name != "self" and param.default is inspect.Parameter.empty
+            }
 
         # Build type_pools: {param_name: [compatible_input_names]}
         self._type_pools = self._build_type_pools()
@@ -162,6 +304,49 @@ class GeneticEntityTester:
             entity_tester.EntityTester.pull_args(self._method) or [] if self._method else []
         )
         self._available_params = list(dict.fromkeys(self._init_params + method_params))
+
+        # Required params are always seeded and protected from DROP
+        self._required_params = init_required | method_required
+
+        agentic_cfg = getattr(self.config.rizza.genetics, "agentic", None)
+        if agentic_cfg and getattr(agentic_cfg, "enabled", False):
+            global _AGENTIC_AVAILABLE
+            if _AGENTIC_AVAILABLE is None:
+                try:
+                    from rizza.agentic_tester import AgenticPayloadLearner as _chk  # noqa: F401
+
+                    _AGENTIC_AVAILABLE = True
+                except (ImportError, Exception) as err:
+                    logger.warning(f"Agentic learner disabled: {err}")
+                    _AGENTIC_AVAILABLE = False
+            if _AGENTIC_AVAILABLE:
+                try:
+                    from pathlib import Path as _Path
+
+                    from rizza.agentic_tester import AgenticPayloadLearner
+
+                    _apix_path = getattr(self.config.rizza, "apix_lib_path", "") or ""
+                    _product = _Path(_apix_path).stem or "default"
+                    self._agentic_learner = AgenticPayloadLearner(
+                        config=agentic_cfg,
+                        judge_fn=self._judge,
+                        genes_to_task_fn=self._genes_to_task,
+                        type_pools=self._type_pools,
+                        available_params=self._available_params,
+                        required_params=self._required_params,
+                        seek_bad=self.seek_bad,
+                        base_dir=self.config.base_dir,
+                        entity=self.entity,
+                        method=self.method,
+                        product=_product,
+                    )
+                except Exception as err:
+                    logger.debug(f"Agentic learner init failed for {self.entity}: {err}")
+                    self._agentic_learner = None
+            else:
+                self._agentic_learner = None
+        else:
+            self._agentic_learner = None
 
     def _build_type_pools(self):
         """Build a {param_name: [compatible_inputs]} map for __init__ + method params."""
@@ -189,9 +374,27 @@ class GeneticEntityTester:
                     entity_name = _entity_from_param_name(param, known_entity_names_lower)
                     if entity_name:
                         field_info = {**field_info, "entity": entity_name}
-                pools[param] = get_compatible_inputs(field_info, all_inputs)
+                pools[param] = get_compatible_inputs(field_info, all_inputs, field_name=param)
 
         return pools
+
+    def _verify_organism(self, organism):
+        """Re-run the organism's genes N more times to confirm it's not a fluke.
+
+        :returns: True if all verification runs pass; False otherwise.
+        """
+        verify_count = getattr(self.config.rizza.genetics, "explore_verify_count", 2)
+        if verify_count <= 0:
+            return True
+        task = self._genes_to_task(organism.genes)
+        for _ in range(verify_count):
+            try:
+                result = task.execute()
+            except RecursionError:
+                return False
+            if "pass" not in result:
+                return False
+        return True
 
     def _save_organism(self, test):
         """Save the test organism to the appropriate file in data/genetic_tests."""
@@ -202,6 +405,9 @@ class GeneticEntityTester:
         except FileNotFoundError:
             existing = {}
         task = self._genes_to_task(test.genes)
+        for k, v in list(task.arg_dict.items()):
+            if v == "genetic_unknown":
+                task.arg_dict[k] = "genetic_known"
         existing[self.test_name] = attr.asdict(task, filter=lambda a, value: a.name != "config")
         yaml.dump(existing, test_file.open("w+"), default_flow_style=False)
 
@@ -254,6 +460,9 @@ class GeneticEntityTester:
     def _create_gene_base(self):
         """Create a valid genetic base to evolve on.
 
+        Required params (no default) are always included. Additional optional
+        params are randomly sampled on top.
+
         :returns: 2-list [param_names, param_inputs]
         """
         all_inputs = list(
@@ -263,18 +472,49 @@ class GeneticEntityTester:
         if not self._available_params:
             return [[], []]
 
+        # Always start with required params
+        params = [p for p in self._available_params if p in self._required_params]
+        optional = [p for p in self._available_params if p not in self._required_params]
+
         max_initial = getattr(self.config.rizza.genetics, "initial_max_gene_params", 3)
-        count = random.randint(1, min(max_initial, len(self._available_params)))
-        params = random.sample(self._available_params, count)
+        extra_count = max(0, random.randint(0, min(max_initial, len(optional))) - len(params))
+        if extra_count > 0 and optional:
+            params.extend(random.sample(optional, min(extra_count, len(optional))))
 
         param_inputs = []
         for param in params:
             pool = self._type_pools.get(param, all_inputs)
+            if param in self._required_params:
+                pool = [g for g in pool if not g.startswith("genetic_")]
+                if not pool:
+                    pool = all_inputs
             param_inputs.append(random.choice(pool) if pool else random.choice(all_inputs))
 
         return [params, param_inputs]
 
-    def run(self, mock=False, save_only_passed=False):
+    def _apply_agentic_improvements(
+        self, org_results, fitness_cache, population, generation, suffix=""
+    ):
+        """Run agentic learner on one generation's results. Returns True if a pass was found."""
+        if self._agentic_learner is None or not org_results:
+            return False
+        improvements = self._agentic_learner.learn_from_generation(org_results, fitness_cache)
+        for org, new_genes, new_points, new_result in improvements:
+            org.genes = new_genes
+            org.points = new_points
+            fitness_cache[str(new_genes)] = (new_result, new_points)
+            if "pass" in new_result and not self.seek_bad and self._verify_organism(org):
+                self._save_organism(org)
+                logger.info(
+                    "Agentic learning found a passing payload"
+                    f" at generation {generation}!{' ' + suffix if suffix else ''}"
+                )
+                return True
+        if improvements:
+            population.sort_population()
+        return False
+
+    def run(self, mock=False, save_only_passed=True):
         """Run a population attempting to maximize desired results."""
         if not self._method and not mock:
             logger.warning(
@@ -323,6 +563,7 @@ class GeneticEntityTester:
         _fitness_cache = {}
         try:
             for generation in range(self.max_generations):
+                _org_results = []
                 progress.update(org_task, completed=0, total=self.population_count, visible=True)
 
                 population.population.sort(key=lambda o: len(o.genes[0]))
@@ -347,8 +588,16 @@ class GeneticEntityTester:
                         if not mock:
                             _fitness_cache[gene_key] = (result, organism.points)
                     progress.advance(org_task)
+                    if not mock:
+                        _org_results.append((organism, result))
 
                     if "pass" in result and not mock and not self.seek_bad:
+                        if not self._verify_organism(organism):
+                            logger.debug(
+                                "Organism failed verification — not saving"
+                                f" (generation {generation})"
+                            )
+                            continue
                         self._save_organism(organism)
                         success_msg = "Success! Generation {} passed with:\n{}".format(
                             generation,
@@ -384,16 +633,27 @@ class GeneticEntityTester:
                     description=f"{gen_label} [green]best={best.points}[/green]",
                 )
                 progress.update(org_task, visible=False)
+                if self._apply_agentic_improvements(
+                    _org_results, _fitness_cache, population, generation
+                ):
+                    return True
                 population.breed_population(
                     type_pools=self._type_pools,
                     tournament_size=getattr(genetics_cfg, "tournament_size", 3),
                     elite_percentage=getattr(genetics_cfg, "elite_percentage", 5),
                     immigration_rate=getattr(genetics_cfg, "immigration_rate", 5),
                     available_genes=self._available_params,
+                    required_genes=self._required_params,
                 )
 
             if not mock and not save_only_passed and population.population:
                 self._save_organism(population.population[0])
+            if not mock and not self.seek_bad:
+                progress.console.print(
+                    f"[bold yellow]✗[/bold yellow] "
+                    f"[bold]{self.entity}.{self.method}[/bold] "
+                    f"exhausted {self.max_generations} generations without passing"
+                )
         finally:
             progress.remove_task(org_task)
             progress.remove_task(gen_task)
@@ -402,11 +662,13 @@ class GeneticEntityTester:
                 self.config._progress = None
 
     def run_best(self):
-        """Pull the best saved test, if any, run it, and return the id."""
-        saved_allow_recursion = self.config.rizza.genetics.allow_recursion
-        saved_max_generations = self.config.rizza.genetics.max_generations
-        self.config.rizza.genetics.allow_recursion = False
-        self.config.rizza.genetics.max_generations = 1
+        """Pull the best saved test, if any, run it, and return the id.
+
+        Sets replay mode via contextvars so that genetic_unknown skips
+        exploration and only replays saved tests.  Thread-safe — no shared
+        config mutation.
+        """
+        token = _replay_mode.set(True)
         try:
             test = self._load_test()
             if test:
@@ -418,11 +680,50 @@ class GeneticEntityTester:
                     logger.warning(f"RecursionError in run_best for {self.entity}; returning -1.")
                     return -1
                 if "pass" in result:
-                    return result["pass"].get("id", -1)
+                    response = result["pass"]
+                    if isinstance(response, dict):
+                        entity_id = response.get("id")
+                        if entity_id is None and isinstance(response.get("result"), dict):
+                            entity_id = response["result"].get("id")
+                        return entity_id if entity_id is not None else -1
             return -1
         finally:
-            self.config.rizza.genetics.allow_recursion = saved_allow_recursion
-            self.config.rizza.genetics.max_generations = saved_max_generations
+            _replay_mode.reset(token)
+
+    def run_validation(self):
+        """Load and execute the saved test; return full validation details or None.
+
+        Unlike run_best(), this captures actual resolved argument values and the full
+        API response for reporting purposes.
+
+        Sets replay mode — see run_best() docstring.
+        """
+        token = _replay_mode.set(True)
+        try:
+            test = self._load_test()
+            if not test:
+                return None
+            task = self._genes_to_task(test)
+            try:
+                details = task.execute(_return_details=True)
+            except RecursionError:
+                logger.warning(f"RecursionError in run_validation for {self.entity}; skipping.")
+                return None
+            result_dict = details["result"]
+            resolved_args = details["resolved_args"]
+            passed = "pass" in result_dict
+            return {
+                "test_name": self.test_name,
+                "entity": self.entity,
+                "method": self.method,
+                "mode": "negative" if self.seek_bad else "positive",
+                "passed": passed,
+                "arg_dict": dict(task.arg_dict),
+                "resolved_args": {k: _safe_str(v) for k, v in resolved_args.items()},
+                "response": result_dict.get("pass") if passed else result_dict.get("fail"),
+            }
+        finally:
+            _replay_mode.reset(token)
 
 
 @attr.s()
@@ -460,7 +761,7 @@ class AsyncGeneticEntityTester(GeneticEntityTester):
         ]
         await asyncio.wait(tasks)
 
-    def run(self, mock=False, save_only_passed=False):
+    def run(self, mock=False, save_only_passed=True):
         """Run a population attempting to maximize desired results."""
         if not self._method and not mock:
             logger.warning(f"{self.entity} does not have the method {self.method}")
@@ -508,6 +809,7 @@ class AsyncGeneticEntityTester(GeneticEntityTester):
         _fitness_cache = {}
         try:
             for generation in range(self.max_generations):
+                _org_results = []
                 progress.update(org_task, completed=0, total=self.population_count, visible=True)
 
                 self.loop = asyncio.new_event_loop()
@@ -526,6 +828,7 @@ class AsyncGeneticEntityTester(GeneticEntityTester):
                     if not mock:
                         gene_key = str(organism.genes)
                         _fitness_cache[gene_key] = (result, organism.points)
+                        _org_results.append((organism, result))
                     if "pass" in result and not mock and not self.seek_bad:
                         passed_organism = organism
                     progress.advance(org_task)
@@ -534,6 +837,12 @@ class AsyncGeneticEntityTester(GeneticEntityTester):
                     o for o in self._population.population if id(o) not in to_remove
                 ]
 
+                if passed_organism is not None and not self._verify_organism(passed_organism):
+                    logger.debug(
+                        "Organism failed verification — not saving"
+                        f" (generation {generation}, async)"
+                    )
+                    passed_organism = None
                 if passed_organism is not None:
                     self._save_organism(passed_organism)
                     success_msg = "Success! Generation {} passed with:\n{}".format(
@@ -567,6 +876,10 @@ class AsyncGeneticEntityTester(GeneticEntityTester):
                     description=f"{gen_label} [green]best={best.points}[/green]",
                 )
                 progress.update(org_task, visible=False)
+                if self._apply_agentic_improvements(
+                    _org_results, _fitness_cache, self._population, generation, suffix="(async)"
+                ):
+                    return True
                 self._population.breed_population(
                     type_pools=self._type_pools,
                     tournament_size=getattr(genetics_cfg, "tournament_size", 3),
@@ -577,6 +890,12 @@ class AsyncGeneticEntityTester(GeneticEntityTester):
 
             if not mock and not save_only_passed and self._population.population:
                 self._save_organism(self._population.population[0])
+            if not mock and not self.seek_bad:
+                progress.console.print(
+                    f"[bold yellow]✗[/bold yellow] "
+                    f"[bold]{self.entity}.{self.method}[/bold] "
+                    f"exhausted {self.max_generations} generations without passing"
+                )
         finally:
             progress.remove_task(org_task)
             progress.remove_task(gen_task)

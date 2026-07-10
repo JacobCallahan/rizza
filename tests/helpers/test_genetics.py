@@ -270,3 +270,29 @@ def test_variable_length_gene_floor():
         test_org.mutate(available_genes=["p1"])
         assert len(test_org.genes[0]) >= 1
         assert len(test_org.genes[1]) >= 1
+
+
+def test_two_list_mutation_preserves_type_compatibility():
+    """Mutation on 2-list genes only changes genes[1] and respects type pools."""
+    type_pools = {
+        "name": ["gen_alphanumeric", "gen_utf8", "gen_uuid"],
+        "label": ["gen_alphanumeric", "gen_utf8"],
+        "desc": ["gen_iplum", "gen_string"],
+    }
+    for _ in range(500):
+        test_org = genetics.Organism(
+            genes=[
+                ["name", "label", "desc"],
+                ["gen_alphanumeric", "gen_alphanumeric", "gen_iplum"],
+            ]
+        )
+        original_params = test_org.genes[0][:]
+        test_org.mutate(type_pools=type_pools)
+        assert (
+            test_org.genes[0] == original_params
+        ), "genes[0] (params) should not change via mutation"
+        assert len(test_org.genes[0]) == len(test_org.genes[1])
+        for i, param in enumerate(test_org.genes[0]):
+            assert (
+                test_org.genes[1][i] in type_pools[param]
+            ), f"genes[1][{i}] = {test_org.genes[1][i]} not in pool for {param}"

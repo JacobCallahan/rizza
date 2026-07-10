@@ -3,6 +3,7 @@ from inspect import signature
 from json import loads
 import logging
 from random import randint
+import re
 
 from requests import HTTPError
 
@@ -22,6 +23,102 @@ def dictionary_exclusion(indict=None, exclude=None):
                 if _exclusion not in str(x) and _exclusion not in str(y)
             }
     return indict
+
+
+def extract_validation_errors(fail_data):
+    """Extract field-level validation errors from an HTTPError fail dict.
+
+    Navigates the structure produced by handle_exception() to find
+    field-to-messages mappings from API validation responses (typically 422).
+
+    Handles common API patterns:
+    - Standard: {"errors": {"field": ["msg1", "msg2"]}}
+    - Singular: {"error": {"field": ["msg"]}}
+    - FastAPI:  {"detail": [{"loc": ["body", "field"], "msg": "..."}]}
+
+    Returns dict mapping field names to lists of error message strings,
+    or empty dict if no validation errors found.
+    """
+    if not isinstance(fail_data, dict):
+        return {}
+
+    http_data = fail_data.get("HTTPError")
+    if not isinstance(http_data, dict):
+        return {}
+
+    response_data = http_data.get("response")
+    if not isinstance(response_data, dict):
+        return {}
+
+    # Standard pattern: {"errors": {"field": ["msg1", ...]}}
+    errors = response_data.get("errors")
+    if isinstance(errors, dict):
+        result = {}
+        for field, messages in errors.items():
+            if isinstance(messages, list):
+                result[field] = [str(m) for m in messages]
+            elif isinstance(messages, str):
+                result[field] = [messages]
+        if result:
+            return result
+
+    # Singular pattern: {"error": {"field": ["msg"]}}
+    error = response_data.get("error")
+    if isinstance(error, dict):
+        result = {}
+        for field, messages in error.items():
+            if isinstance(messages, list):
+                result[field] = [str(m) for m in messages]
+            elif isinstance(messages, str):
+                result[field] = [messages]
+        if result:
+            return result
+
+    # FastAPI pattern: {"detail": [{"loc": ["body", "field"], "msg": "..."}]}
+    detail = response_data.get("detail")
+    if isinstance(detail, list):
+        result = {}
+        for item in detail:
+            if not isinstance(item, dict):
+                continue
+            loc = item.get("loc")
+            msg = item.get("msg")
+            if not loc or not msg:
+                continue
+            field = str(loc[-1]) if loc else None
+            if field:
+                result.setdefault(field, []).append(str(msg))
+        if result:
+            return result
+
+    return {}
+
+
+_MISSING_PARAM_RE = re.compile(r"missing \d+ required (?:positional )?arguments?:")
+
+
+def extract_missing_params(fail_data):
+    """Extract parameter names from TypeError 'missing required argument' messages.
+
+    Parses Python's deterministic TypeError format:
+    - "Cls.__init__() missing 1 required positional argument: 'name'"
+    - "Cls.__init__() missing 3 required positional arguments: 'a', 'b', and 'c'"
+
+    Returns list of param name strings, or empty list if not applicable.
+    """
+    if not isinstance(fail_data, dict):
+        return []
+
+    type_error = fail_data.get("TypeError")
+    if not type_error:
+        return []
+
+    msg = str(type_error[0]) if isinstance(type_error, list | tuple) and type_error else ""
+    if not _MISSING_PARAM_RE.search(msg):
+        return []
+
+    after_colon = msg.split(":", 1)[-1] if ":" in msg else ""
+    return re.findall(r"'(\w+)'", after_colon)
 
 
 def handle_exception(exception=None):
@@ -58,11 +155,13 @@ def json_serial(obj=None):
 
 def dict_search(needle, haystack):
     if not isinstance(haystack, dict):
-        return str(needle) in str(haystack)
+        if isinstance(haystack, list | tuple):
+            return any(dict_search(needle, item) for item in haystack)
+        return str(needle) == str(haystack)
     if needle in haystack:
         return True
     for key, value in haystack.items():
-        if str(needle) in str(key):
+        if str(needle) == str(key):
             return True
         if dict_search(needle, value):
             return True
@@ -94,7 +193,7 @@ def get_default_type(func):
 
 def form_input(name, methods, field, config, field_info=None):
     """Take in a function name, get information, call it, return result"""
-    if "genetic" in name:
+    if "genetic" in name or name == "get_entity_id":
         entity = field_to_entity(field, field_info)
         if entity:
             return methods.get(name, lambda: name)(config, entity)

@@ -4,4 +4,5 @@ _import:
   - connection.pconf
 apix_lib_path: ~/rizza/libs/satellite.py
 log_level: info
+log_file_level: debug
 log_path: logs/rizza.log

@@ -37,6 +37,7 @@ Repository = "https://github.com/JacobCallahan/rizza"
 
 [project.optional-dependencies]
 dev = ["pre-commit", "pytest", "pytest-randomly", "ruff"]
+agentic = ["torch", "transformers"]
 
 [project.scripts]
 rizza = "rizza.__main__:cli"
