@@ -153,3 +153,69 @@ def test_init_config_force_overwrites(tmp_path):
     result = cfg.init_config(force=True)
     assert "rizza.pconf" in result["copied"]
     assert result["skipped"] == []
+
+
+# ── Version utilities ────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("input_ver", "expected"),
+    [
+        ("6.12.1", "6.12"),
+        ("6.12", "6.12"),
+        ("6", "6"),
+        ("10.5.3.1", "10.5"),
+        ("unknown", "unknown"),
+        ("stream", "stream"),
+    ],
+)
+def test_version_minor(input_ver, expected):
+    assert config._version_minor(input_ver) == expected
+
+
+def test_product_slug_default(tmp_path):
+    cfg = config.Config(cfg_dir=str(tmp_path))
+    assert cfg.product_slug == "satellite-stream"
+
+
+def test_product_slug_with_version(tmp_path):
+    cfg = config.Config(cfg_dir=str(tmp_path))
+    cfg.rizza.product_name = "foreman"
+    cfg.rizza.product_version = "3.8.1"
+    assert cfg.product_slug == "foreman-3.8"
+
+
+def test_product_version_minor_empty(tmp_path):
+    cfg = config.Config(cfg_dir=str(tmp_path))
+    assert cfg.product_version_minor == "stream"
+
+
+def test_product_version_minor_set(tmp_path):
+    cfg = config.Config(cfg_dir=str(tmp_path))
+    cfg.rizza.product_version = "6.12.3"
+    assert cfg.product_version_minor == "6.12"
+
+
+def test_genetic_tests_dir_includes_product_slug(tmp_path):
+    cfg = config.Config(cfg_dir=str(tmp_path))
+    cfg.base_dir = tmp_path
+    cfg.rizza.product_version = "6.12"
+    d = cfg.genetic_tests_dir
+    assert d == tmp_path / "data" / "genetic_tests" / "satellite-6.12" / "api"
+
+
+def test_genetic_tests_dir_for_version(tmp_path):
+    cfg = config.Config(cfg_dir=str(tmp_path))
+    cfg.base_dir = tmp_path
+    d = cfg.genetic_tests_dir_for_version("6.11.3")
+    assert d == tmp_path / "data" / "genetic_tests" / "satellite-6.11" / "api"
+
+
+def test_checkpoint_includes_product_slug(tmp_path):
+    cfg = config.Config(cfg_dir=str(tmp_path))
+    cfg.base_dir = tmp_path
+    cfg.rizza.product_version = "6.12"
+    cfg.save_checkpoint("Arch", "create")
+    expected = tmp_path / "data" / "explore_checkpoint_satellite-6.12_api"
+    assert expected.exists()
+    assert cfg.load_checkpoint() == ("Arch", "create")

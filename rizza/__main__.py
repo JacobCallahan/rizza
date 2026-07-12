@@ -69,7 +69,7 @@ def cli(ctx):
     "continue_run",
     is_flag=True,
     default=False,
-    help="Resume from the last checkpointed entity saved in last.pconf.",
+    help="Resume from the last checkpointed entity/method in ~/rizza/data/explore_checkpoint_*.",
 )
 @click.option(
     "--last-failed",
@@ -104,7 +104,10 @@ def explore(
     # _all entity: delegate to run_all_entities with method-mode support
     if entity == "_all":
         if last_failed:
-            failed_file = conf.base_dir / "validation" / "last_failed.json"
+            interface = getattr(conf.rizza, "interface", "api")
+            failed_file = (
+                conf.base_dir / "validation" / f"last_failed_{conf.product_slug}_{interface}.json"
+            )
             if not failed_file.exists():
                 click.echo("No last_failed.json found. Run `rizza validate` first.", err=True)
                 sys.exit(1)
@@ -213,6 +216,32 @@ def _sanitize(obj):
     return obj
 
 
+def _copy_passing_tests(conf, results, from_version):
+    """Copy passing test entries from a source version's YAML files into the current version."""
+    source_dir = conf.genetic_tests_dir_for_version(from_version)
+    dest_dir = conf.genetic_tests_dir
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    copied = 0
+    for r in results:
+        if not r["passed"]:
+            continue
+        entity_name = r["entity"]
+        test_name = r["test_name"]
+        src_file = source_dir / f"{entity_name}.yaml"
+        dst_file = dest_dir / f"{entity_name}.yaml"
+        if not src_file.exists():
+            continue
+        src_tests = yaml.safe_load(src_file.read_text()) or {}
+        if test_name not in src_tests:
+            continue
+        dst_tests = yaml.safe_load(dst_file.read_text()) if dst_file.exists() else {}
+        dst_tests[test_name] = src_tests[test_name]
+        with dst_file.open("w") as fh:
+            yaml.dump(dst_tests, fh, default_flow_style=False)
+        copied += 1
+    click.echo(f"Copied {copied} test(s) to {dest_dir}")
+
+
 def _write_validation_report(
     conf, results, report_path, report_format, entity="_all", method="_all"
 ):
@@ -228,14 +257,15 @@ def _write_validation_report(
     """
     import json as _json
 
-    _apix_path = getattr(conf.rizza, "apix_lib_path", "") or ""
-    product = Path(_apix_path).stem or "satellite"
+    interface = getattr(conf.rizza, "interface", "api")
+    product = getattr(conf.rizza, "product_name", "satellite")
+    version = conf.product_version_minor
     date_str = datetime.date.today().strftime("%d%b%y")
 
     if report_path is None:
         out_dir = conf.base_dir / "validation"
         out_dir.mkdir(parents=True, exist_ok=True)
-        parts = [product]
+        parts = [product, version, interface]
         if entity not in ("_all", None):
             parts.append(entity)
         if method not in ("_all", "_new", None):
@@ -254,6 +284,8 @@ def _write_validation_report(
     payload = _sanitize(
         {
             "product": product,
+            "version": version,
+            "interface": interface,
             "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
             "summary": {
                 "total": len(results),
@@ -267,7 +299,8 @@ def _write_validation_report(
     if report_format == "json":
         dest.write_text(_json.dumps(payload, indent=2, default=str))
     else:
-        yaml.safe_dump(payload, dest.open("w"), default_flow_style=False, allow_unicode=True)
+        with dest.open("w") as fh:
+            yaml.safe_dump(payload, fh, default_flow_style=False, allow_unicode=True)
 
     return dest
 
@@ -351,6 +384,13 @@ def _print_validation_summary(results, prune, report_dest=None):
     help="Report file format.",
 )
 @click.option("--debug", is_flag=True, help="Enable debug logging level.")
+@click.option(
+    "--from-version",
+    "from_version",
+    type=str,
+    default=None,
+    help="Validate using tests from version X.Y[.Z] against the current server.",
+)
 @click.pass_context
 def validate(
     ctx,
@@ -363,10 +403,24 @@ def validate(
     report_path,
     report_format,
     debug,
+    from_version,
 ):
     """Re-run saved tests to confirm they still pass. Optionally prune failures."""
     conf = ctx.obj
     run_async = not no_async
+
+    if from_version and prune:
+        click.echo(
+            "Cannot use --prune with --from-version (cross-version is read-only).", err=True
+        )
+        sys.exit(1)
+
+    data_dir = None
+    if from_version:
+        data_dir = conf.genetic_tests_dir_for_version(from_version)
+        if not data_dir.exists():
+            click.echo(f"No test data found for version {from_version!r} at {data_dir}", err=True)
+            sys.exit(1)
 
     conf.init_logger(
         path=conf.base_dir.joinpath("logs/validate.log"),
@@ -374,8 +428,7 @@ def validate(
     )
     conf.init_connection()
 
-    # Count tests ahead of time so the progress bar has a meaningful total
-    total = prune_helper.count_pending_tests(conf, entity, method)
+    total = prune_helper.count_pending_tests(conf, entity, method, data_dir=data_dir)
 
     progress = genetic_tester._make_progress()
     conf._progress = progress
@@ -386,15 +439,21 @@ def validate(
     with progress:
         if run_async and entity == "_all":
             results = prune_helper.async_validate_tests(
-                conf, entity=entity, method=method, prune=prune, async_limit=async_limit
+                conf,
+                entity=entity,
+                method=method,
+                prune=prune,
+                async_limit=async_limit,
+                data_dir=data_dir,
             )
         else:
-            results = prune_helper.validate_tests(conf, entity=entity, method=method, prune=prune)
+            results = prune_helper.validate_tests(
+                conf, entity=entity, method=method, prune=prune, data_dir=data_dir
+            )
 
     conf._progress = None
     conf._validate_task = None
 
-    # Write report (always), then print summary
     report_dest = None
     if results:
         report_dest = _write_validation_report(
@@ -402,6 +461,13 @@ def validate(
         )
 
     _print_validation_summary(results, prune, report_dest)
+
+    if from_version and results:
+        passed = [r for r in results if r["passed"]]
+        if passed and click.confirm(
+            f"\nCopy {len(passed)} passing test(s) to {conf.product_slug}?"
+        ):
+            _copy_passing_tests(conf, results, from_version)
 
     if cleanup:
         from rizza import apix_loader
@@ -606,13 +672,19 @@ def knowledge(ctx):
 
 
 @knowledge.command(name="genetic")
+@click.option(
+    "--version",
+    "version",
+    default=None,
+    help="Show tests for a specific version (default: config version).",
+)
 @click.pass_context
-def knowledge_genetic(ctx):
+def knowledge_genetic(ctx, version):
     """Show saved genetic test results, grouped by entity."""
     import yaml as _yaml
 
     conf = ctx.obj
-    data_dir = conf.base_dir / "data" / "genetic_tests"
+    data_dir = conf.genetic_tests_dir_for_version(version) if version else conf.genetic_tests_dir
     if not data_dir.exists():
         click.echo("No saved genetic tests found.")
         return
@@ -620,7 +692,10 @@ def knowledge_genetic(ctx):
     if not yaml_files:
         click.echo("No saved genetic tests found.")
         return
-    rprint(f"\n[bold]Saved Genetic Tests[/bold]  [dim]({data_dir})[/dim]\n")
+    rprint(
+        f"\n[bold]Saved Genetic Tests[/bold]  [dim]({data_dir})[/dim]"
+        f"  [dim][{conf.product_slug}][/dim]\n"
+    )
     for yaml_file in yaml_files:
         tests = _yaml.safe_load(yaml_file.read_text()) or {}
         if not tests:
@@ -818,8 +893,14 @@ def _knowledge_show_dqn(product, interface, policy_file):
     show_default=True,
     help="Number of top learned states to display (Q-table only).",
 )
+@click.option(
+    "--version",
+    "version",
+    default=None,
+    help="Show policies for a specific version (default: all versions).",
+)
 @click.pass_context
-def knowledge_agentic(ctx, top):
+def knowledge_agentic(ctx, top, version):
     """Show agentic RL policy stats, grouped by product and interface."""
     import json as _json
 
@@ -828,6 +909,10 @@ def knowledge_agentic(ctx, top):
     if not agentic_dir.exists():
         click.echo("No agentic knowledge base found.")
         return
+
+    from rizza.helpers.config import _version_minor
+
+    version_filter = _version_minor(version) if version else None
 
     policy_files = (
         list(agentic_dir.rglob("qtable.json"))
@@ -838,12 +923,22 @@ def knowledge_agentic(ctx, top):
         click.echo("No agentic knowledge base found.")
         return
 
+    if version_filter:
+        policy_files = [
+            pf
+            for pf in policy_files
+            if pf.relative_to(agentic_dir).parts[0].endswith(f"-{version_filter}")
+        ]
+        if not policy_files:
+            click.echo(f"No agentic policies found for version {version!r}.")
+            return
+
     action_labels = ["SWAP", "ADD", "DROP", "NOOP", "TARGETED_SWAP"]
     rprint(f"\n[bold]Agentic Knowledge Base[/bold]  [dim]({agentic_dir})[/dim]\n")
 
     for policy_file in sorted(policy_files):
         rel_parts = policy_file.relative_to(agentic_dir).parts
-        product = rel_parts[0] if len(rel_parts) > 2 else "unknown"
+        product_slug = rel_parts[0] if len(rel_parts) > 2 else "unknown"
         interface = rel_parts[1] if len(rel_parts) > 2 else "unknown"
 
         if policy_file.suffix == ".json":
@@ -852,13 +947,88 @@ def knowledge_agentic(ctx, top):
             except Exception as e:
                 rprint(f"  [red]Error reading {policy_file.name}: {e}[/red]")
                 continue
-            _knowledge_show_qtable(product, interface, data, top, action_labels)
+            _knowledge_show_qtable(product_slug, interface, data, top, action_labels)
 
         elif policy_file.name == "gen_recommender.pt":
-            _knowledge_show_gen_recommender(product, interface, policy_file)
+            _knowledge_show_gen_recommender(product_slug, interface, policy_file)
 
         elif policy_file.suffix == ".pt":
-            _knowledge_show_dqn(product, interface, policy_file)
+            _knowledge_show_dqn(product_slug, interface, policy_file)
+
+
+@knowledge.command(name="products")
+@click.pass_context
+def knowledge_products(ctx):
+    """List all saved products and versions, highlighting the active one."""
+    from rich.tree import Tree
+
+    conf = ctx.obj
+    # {product_name: {version: set(interfaces)}}
+    products = {}
+
+    genetic_base = conf.base_dir / "data" / "genetic_tests"
+    agentic_base = conf.base_dir / "data" / "agentic"
+
+    for base in [genetic_base, agentic_base]:
+        if not base.exists():
+            continue
+        for slug_dir in sorted(base.iterdir()):
+            if not slug_dir.is_dir():
+                continue
+            name, version = _parse_product_slug(slug_dir.name)
+            if not name:
+                continue
+            entry = products.setdefault(name, {}).setdefault(version, set())
+            for iface_dir in slug_dir.iterdir():
+                if iface_dir.is_dir():
+                    entry.add(iface_dir.name)
+
+    if not products:
+        click.echo("No saved product data found.")
+        return
+
+    active_name = getattr(conf.rizza, "product_name", "satellite")
+    active_version = conf.product_version_minor
+
+    tree = Tree("[bold]Saved Products[/bold]")
+    for name in sorted(products):
+        product_branch = tree.add(f"[bold cyan]{name}[/bold cyan]")
+        for version in sorted(products[name], key=_version_sort_key):
+            interfaces = sorted(products[name][version])
+            iface_str = ", ".join(interfaces) if interfaces else "none"
+            is_active = name == active_name and version == active_version
+            if is_active:
+                product_branch.add(
+                    f"[bold green]{version}[/bold green] [dim]({iface_str})[/dim]"
+                    f"  [green]<- active[/green]"
+                )
+            else:
+                product_branch.add(f"{version} [dim]({iface_str})[/dim]")
+
+    console.print()
+    console.print(tree)
+    console.print()
+
+
+def _parse_product_slug(slug):
+    """Parse 'satellite-6.12' → ('satellite', '6.12'). Returns (None, None) on failure."""
+    idx = slug.rfind("-")
+    if idx <= 0:
+        return None, None
+    name = slug[:idx]
+    version = slug[idx + 1 :]
+    return name, version
+
+
+def _version_sort_key(version):
+    """Sort versions numerically where possible, with 'stream' last."""
+    if version == "stream":
+        return (999, 999)
+    try:
+        parts = version.split(".")
+        return tuple(int(p) for p in parts)
+    except ValueError:
+        return (998,)
 
 
 if __name__ == "__main__":

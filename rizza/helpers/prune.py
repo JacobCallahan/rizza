@@ -18,7 +18,7 @@ def genetic_prune(conf, entity="All"):
         for target in list(entity_tester.EntityTester.pull_entities()):
             genetic_prune(conf, target)
     else:
-        test_file = conf.base_dir.joinpath(f"data/genetic_tests/{entity}.yaml")
+        test_file = conf.genetic_tests_dir / f"{entity}.yaml"
         logger.debug(f"Current target file: {test_file}")
         to_remove = []
         if test_file.exists() and test_file.stat().st_size > MIN_FILE_SIZE:
@@ -79,20 +79,21 @@ def async_genetic_prune(conf, entity="All", async_limit=100):
     loop.close()
 
 
-def count_pending_tests(conf, entity="_all", method="_all"):
+def count_pending_tests(conf, entity="_all", method="_all", data_dir=None):
     """Count how many positive tests would be validated.
 
     :param conf: Config instance.
     :param entity: Entity name or "_all".
     :param method: Method name or "_all".
+    :param data_dir: Override data directory (for cross-version validation).
     :returns: Integer count of matching saved positive tests.
     """
     if entity == "_all":
         return sum(
-            count_pending_tests(conf, e, method)
+            count_pending_tests(conf, e, method, data_dir=data_dir)
             for e in entity_tester.EntityTester.pull_entities()
         )
-    test_file = conf.base_dir / "data" / "genetic_tests" / f"{entity}.yaml"
+    test_file = (data_dir or conf.genetic_tests_dir) / f"{entity}.yaml"
     if not test_file.exists() or test_file.stat().st_size < MIN_FILE_SIZE:
         return 0
     tests = yaml.safe_load(test_file.read_text()) or {}
@@ -105,22 +106,23 @@ def count_pending_tests(conf, entity="_all", method="_all"):
     )
 
 
-def validate_tests(conf, entity="_all", method="_all", prune=False):
+def validate_tests(conf, entity="_all", method="_all", prune=False, data_dir=None):
     """Validate saved genetic tests; optionally prune failures.
 
     :param conf: Config instance.
     :param entity: Entity name, or "_all" for all entities.
     :param method: Method name, or "_all" for all saved methods.
     :param prune: If True, remove failing tests from the YAML.
+    :param data_dir: Override data directory (for cross-version validation).
     :returns: List of validation result dicts from GeneticEntityTester.run_validation().
     """
     if entity == "_all":
         all_results = []
         for target in list(entity_tester.EntityTester.pull_entities()):
-            all_results.extend(validate_tests(conf, target, method, prune))
+            all_results.extend(validate_tests(conf, target, method, prune, data_dir=data_dir))
         return all_results
 
-    test_file = conf.base_dir / "data" / "genetic_tests" / f"{entity}.yaml"
+    test_file = (data_dir or conf.genetic_tests_dir) / f"{entity}.yaml"
     if not test_file.exists() or test_file.stat().st_size < MIN_FILE_SIZE:
         return []
 
@@ -164,17 +166,19 @@ def validate_tests(conf, entity="_all", method="_all", prune=False):
     return results
 
 
-async def _async_validate(conf, entity, method, prune, sem):
+async def _async_validate(conf, entity, method, prune, sem, data_dir=None):
     """Run a single entity's validation in the default executor."""
     async with sem:
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, validate_tests, conf, entity, method, prune)
+        return await loop.run_in_executor(
+            None, validate_tests, conf, entity, method, prune, data_dir
+        )
 
 
-async def _async_validate_all(conf, method, prune, sem):
+async def _async_validate_all(conf, method, prune, sem, data_dir=None):
     """Run validation for all entities concurrently."""
     tasks = [
-        asyncio.ensure_future(_async_validate(conf, entity, method, prune, sem))
+        asyncio.ensure_future(_async_validate(conf, entity, method, prune, sem, data_dir=data_dir))
         for entity in list(entity_tester.EntityTester.pull_entities())
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -187,17 +191,20 @@ async def _async_validate_all(conf, method, prune, sem):
     return all_results
 
 
-def _save_failed(results, base_dir):
+def _save_failed(results, conf):
     failed = {}
     for r in results:
         if not r.get("passed"):
             failed.setdefault(r["entity"], []).append(r["method"])
-    out = base_dir / "validation" / "last_failed.json"
+    interface = getattr(conf.rizza, "interface", "api")
+    out = conf.base_dir / "validation" / f"last_failed_{conf.product_slug}_{interface}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(failed, indent=2))
 
 
-def async_validate_tests(conf, entity="_all", method="_all", prune=False, async_limit=100):
+def async_validate_tests(
+    conf, entity="_all", method="_all", prune=False, async_limit=100, data_dir=None
+):
     """Asynchronously validate saved genetic tests.
 
     :param conf: Config instance.
@@ -205,19 +212,22 @@ def async_validate_tests(conf, entity="_all", method="_all", prune=False, async_
     :param method: Method name or "_all".
     :param prune: Remove failing tests if True.
     :param async_limit: Maximum concurrent validations.
+    :param data_dir: Override data directory (for cross-version validation).
     :returns: List of validation result dicts.
     """
     if entity != "_all":
-        results = validate_tests(conf, entity, method, prune)
-        _save_failed(results, conf.base_dir)
+        results = validate_tests(conf, entity, method, prune, data_dir=data_dir)
+        _save_failed(results, conf)
         return results
 
     sem = asyncio.Semaphore(async_limit)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        results = loop.run_until_complete(_async_validate_all(conf, method, prune, sem))
-        _save_failed(results, conf.base_dir)
+        results = loop.run_until_complete(
+            _async_validate_all(conf, method, prune, sem, data_dir=data_dir)
+        )
+        _save_failed(results, conf)
         return results
     finally:
         loop.run_until_complete(loop.shutdown_default_executor())

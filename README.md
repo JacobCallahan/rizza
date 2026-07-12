@@ -23,16 +23,16 @@ Rizza uses [picoconf](https://github.com/JacobCallahan/picoconf) `.pconf` files.
 **`connection.pconf`**
 ```yaml
 _envar_prefix: rizza_connection
-HOSTNAME: satellite.example.com
-USERNAME: admin
-PASSWORD: changeme
+hostname: satellite.example.com
+username: admin
+password: changeme
 ```
 
 **`genetics.pconf`**
 ```yaml
 _envar_prefix: rizza_genetics
-POPULATION_COUNT: 100
-MAX_GENERATIONS: 10000
+population_count: 100
+max_generations: 10000
 # ... see config/genetics.pconf.example for all options
 ```
 
@@ -42,9 +42,9 @@ _envar_prefix: rizza
 _import:
   - genetics.pconf
   - connection.pconf
-APIX_LIB_PATH: ~/rizza/apix_generated.py
-LOG_LEVEL: info
-LOG_PATH: logs/rizza.log
+apix_lib_path: ~/rizza/apix_generated.py
+log_level: info
+log_path: logs/rizza.log
 ```
 
 ### Runtime overrides via environment variables

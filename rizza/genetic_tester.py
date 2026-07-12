@@ -321,12 +321,11 @@ class GeneticEntityTester:
                     _AGENTIC_AVAILABLE = False
             if _AGENTIC_AVAILABLE:
                 try:
-                    from pathlib import Path as _Path
-
                     from rizza.agentic_tester import AgenticPayloadLearner
 
-                    _apix_path = getattr(self.config.rizza, "apix_lib_path", "") or ""
-                    _product = _Path(_apix_path).stem or "default"
+                    _product = getattr(self.config.rizza, "product_name", "satellite")
+                    _version = self.config.product_version_minor
+                    _interface = getattr(self.config.rizza, "interface", "api")
                     self._agentic_learner = AgenticPayloadLearner(
                         config=agentic_cfg,
                         judge_fn=self._judge,
@@ -339,6 +338,8 @@ class GeneticEntityTester:
                         entity=self.entity,
                         method=self.method,
                         product=_product,
+                        version=_version,
+                        interface=_interface,
                     )
                 except Exception as err:
                     logger.debug(f"Agentic learner init failed for {self.entity}: {err}")
@@ -398,7 +399,7 @@ class GeneticEntityTester:
 
     def _save_organism(self, test):
         """Save the test organism to the appropriate file in data/genetic_tests."""
-        test_file = self.config.base_dir.joinpath(f"data/genetic_tests/{self.entity}.yaml")
+        test_file = self.config.genetic_tests_dir / f"{self.entity}.yaml"
         test_file.parent.mkdir(parents=True, exist_ok=True)
         try:
             existing = yaml.load(test_file.open("r+"), Loader=yaml.FullLoader) or {}
@@ -416,7 +417,7 @@ class GeneticEntityTester:
 
         :returns: 2-list [param_names, param_inputs] or False.
         """
-        test_file = self.config.base_dir.joinpath(f"data/genetic_tests/{self.entity}.yaml")
+        test_file = self.config.genetic_tests_dir / f"{self.entity}.yaml"
         test_file.parent.mkdir(parents=True, exist_ok=True)
         if test_file.exists():
             tests = yaml.load(test_file.open("r"), Loader=yaml.FullLoader) or {}

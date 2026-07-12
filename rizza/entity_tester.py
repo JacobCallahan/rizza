@@ -69,36 +69,47 @@ class EntityTester:
         return 0
 
     @staticmethod
-    def pull_entities(exclude=None):
-        """Return a dict of {name: class} for all apix entity classes."""
-        try:
-            from rizza import apix_loader
+    def _get_module_and_base():
+        """Return (module, base_class) via the active adapter, or apix_loader fallback."""
+        from rizza import interface_loader
 
-            module = apix_loader.get_apix_module()
-            Satellite = apix_loader.get_satellite_class()
+        adapter = interface_loader.get_current()
+        if adapter is not None:
+            module = adapter.load_module(path=None)
+            base_cls = adapter.get_base_class()
+            return module, base_cls
+        from rizza import apix_loader
+
+        module = apix_loader.get_apix_module()
+        base_cls = apix_loader.get_satellite_class()
+        return module, base_cls
+
+    @staticmethod
+    def pull_entities(exclude=None):
+        """Return a dict of {name: class} for all entity classes."""
+        try:
+            module, base_cls = EntityTester._get_module_and_base()
         except Exception as err:
-            logger.warning(f"Could not load apix module: {err}")
+            logger.warning(f"Could not load module: {err}")
             return {}
 
         entities = {
             name: cls
             for name, cls in inspect.getmembers(module, inspect.isclass)
-            if issubclass(cls, Satellite) and cls is not Satellite
+            if issubclass(cls, base_cls) and cls is not base_cls
         }
         return dictionary_exclusion(entities, exclude)
 
     @staticmethod
     def pull_methods(entity=None, exclude=None):
-        """Return a dict of {name: method} for an entity's API methods."""
+        """Return a dict of {name: method} for an entity's methods."""
         if entity is None:
             return {}
 
         try:
-            from rizza import apix_loader
-
-            Satellite = apix_loader.get_satellite_class()
+            _, base_cls = EntityTester._get_module_and_base()
         except Exception as err:
-            logger.warning(f"Could not load apix module: {err}")
+            logger.warning(f"Could not load module: {err}")
             return {}
 
         api_methods = getattr(entity, "_api_methods", None)
@@ -107,8 +118,7 @@ class EntityTester:
                 name: getattr(entity, name) for name in api_methods if hasattr(entity, name)
             }
         else:
-            # Fall back: subtract Satellite base methods from entity's methods
-            base_methods = set(dir(Satellite))
+            base_methods = set(dir(base_cls))
             methods = {
                 name: getattr(entity, name)
                 for name in dir(entity)

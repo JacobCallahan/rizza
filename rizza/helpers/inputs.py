@@ -164,7 +164,7 @@ def genetic_unknown(config, entity="Organization", max_generations=None):
         __logger.warning("Reached max recursion depth.")
         with __recursion_lock:
             config.rizza.genetics.recursion_depth -= 1
-        return 1
+        return None
 
     cycle_token = __creating.set(currently_creating | {entity})
     __logger.info(f"Attempting to create {entity}...")

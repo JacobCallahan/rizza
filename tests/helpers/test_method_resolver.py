@@ -34,8 +34,8 @@ def conf():
 
 @pytest.fixture
 def data_dir(conf):
-    """Create a temp genetic_tests dir; clean the FakeEntity file before and after each test."""
-    d = conf.base_dir / "data" / "genetic_tests"
+    """Create the interface-specific genetic_tests dir; clean FakeEntity file around each test."""
+    d = conf.genetic_tests_dir
     d.mkdir(parents=True, exist_ok=True)
     entity_file = d / "FakeEntity.yaml"
     entity_file.unlink(missing_ok=True)
@@ -45,7 +45,8 @@ def data_dir(conf):
 
 def _write_entity_file(data_dir, entity_name, tests: dict):
     f = data_dir / f"{entity_name}.yaml"
-    yaml.dump(tests, f.open("w"))
+    with f.open("w") as fh:
+        yaml.safe_dump(tests, fh)
     return f
 
 

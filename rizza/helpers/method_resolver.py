@@ -16,7 +16,7 @@ def get_new_methods(config, entity_name, entity_cls, seek_bad=False):
     :returns: Dict of {method_name: method_callable} not yet saved.
     """
     mode = "negative" if seek_bad else "positive"
-    test_file = config.base_dir / "data" / "genetic_tests" / f"{entity_name}.yaml"
+    test_file = config.genetic_tests_dir / f"{entity_name}.yaml"
     saved_keys = set()
     if test_file.exists():
         with contextlib.suppress(Exception):
@@ -39,7 +39,7 @@ def get_explored_methods(config, entity_name, entity_cls, seek_bad=False):
     :returns: Dict of {method_name: method_callable} already saved.
     """
     mode = "negative" if seek_bad else "positive"
-    test_file = config.base_dir / "data" / "genetic_tests" / f"{entity_name}.yaml"
+    test_file = config.genetic_tests_dir / f"{entity_name}.yaml"
     saved_keys = set()
     if test_file.exists():
         with contextlib.suppress(Exception):

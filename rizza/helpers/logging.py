@@ -31,6 +31,8 @@ def setup_logging(console_level=logging.INFO, file_level=None, log_path=None):
     """
     console_int = resolve_log_level(console_level)
     root = logging.getLogger()
+    for handler in root.handlers:
+        handler.close()
     root.handlers.clear()
     root.setLevel(logging.DEBUG)
 

@@ -13,6 +13,13 @@ logger = logging.getLogger(__name__)
 
 IMPORTED_CHUNKS = {"genetics": "genetics.pconf", "connection": "connection.pconf"}
 
+
+def _version_minor(version_string):
+    """'6.12.1' → '6.12'. Pass-through for 'X.Y' or non-numeric strings."""
+    parts = str(version_string).split(".")
+    return ".".join(parts[:2])
+
+
 DEFAULT_CONFIG = {
     "genetics": {
         "population_count": 100,
@@ -72,7 +79,11 @@ DEFAULT_CONFIG = {
         "username": "admin",
         "password": "changeme",
     },
+    "interface": "api",
     "apix_lib_path": "~/rizza/libs/satellite.py",
+    "clix_lib_path": "",
+    "product_name": "satellite",
+    "product_version": "",
     "log_path": "logs/rizza.log",
     "log_level": "info",
     "log_file_level": "debug",
@@ -112,19 +123,36 @@ class Config:
             logger.debug("Set rizza configuration.")
 
     def init_connection(self):
-        """Initialize the apix API connection using connection config values."""
-        from rizza import apix_loader
+        """Initialize the product connection using the configured interface adapter."""
+        from rizza import interface_loader
 
+        interface = getattr(self.rizza, "interface", "api")
+        adapter = interface_loader.get_adapter(interface)
+        lib_path = self._get_lib_path(interface)
+
+        adapter.load_module(path=lib_path)
         conn = self.rizza.connection
-        hostname = conn.hostname
-        username = conn.username
-        password = conn.password
+        adapter.init_connection(
+            hostname=conn.hostname,
+            username=conn.username,
+            password=conn.password,
+        )
+        interface_loader.set_current(adapter)
+        logger.debug(f"Connection initialized for interface={interface}, host={conn.hostname}")
 
-        apix_loader.get_apix_module(path=self.rizza.apix_lib_path)
-
-        APIConnection = apix_loader.get_connection_class()
-        APIConnection(hostname=hostname, auth=f"{username}:{password}")
-        logger.debug(f"API connection initialized for host: {hostname}")
+    def _get_lib_path(self, interface):
+        """Return the configured library path for the given interface."""
+        path_map = {
+            "api": getattr(self.rizza, "apix_lib_path", ""),
+            "cli": getattr(self.rizza, "clix_lib_path", ""),
+        }
+        path = path_map.get(interface, "")
+        if not path:
+            raise ValueError(
+                f"No lib path configured for interface {interface!r}. "
+                f"Set the corresponding lib_path in rizza.pconf."
+            )
+        return path
 
     def init_logger(self, path=None, level=None, file_level=None):
         path = path or self.rizza.log_path
@@ -221,7 +249,7 @@ class Config:
             examples = list(src_dir.glob("*.pconf.example"))
         for example in examples:
             dest = dest_dir / example.name.removesuffix(".example")
-            if dest.exists() and not force:
+            if not example.exists() or (dest.exists() and not force):
                 skipped.append(dest.name)
             else:
                 shutil.copy2(example, dest)
@@ -231,15 +259,45 @@ class Config:
             self.rizza = PicoConf(str(rizza_pconf))
         return {"copied": copied, "skipped": skipped}
 
+    @property
+    def product_version_minor(self):
+        """Return the major.minor version string, or 'stream' if unset."""
+        v = getattr(self.rizza, "product_version", "")
+        return _version_minor(v) if v else "stream"
+
+    @property
+    def product_slug(self):
+        """Return '{product_name}-{major.minor}' for directory naming."""
+        name = getattr(self.rizza, "product_name", "satellite")
+        return f"{name}-{self.product_version_minor}"
+
+    @property
+    def genetic_tests_dir(self):
+        """Return the data directory for genetic tests, namespaced by product-version/interface."""
+        interface = getattr(self.rizza, "interface", "api")
+        return self.base_dir / "data" / "genetic_tests" / self.product_slug / interface
+
+    def genetic_tests_dir_for_version(self, version):
+        """Return the genetic tests directory for an arbitrary version."""
+        interface = getattr(self.rizza, "interface", "api")
+        name = getattr(self.rizza, "product_name", "satellite")
+        slug = f"{name}-{_version_minor(version)}"
+        return self.base_dir / "data" / "genetic_tests" / slug / interface
+
+    def _checkpoint_path(self):
+        """Return the checkpoint file path for the current product-version and interface."""
+        interface = getattr(self.rizza, "interface", "api")
+        return self.base_dir / "data" / f"explore_checkpoint_{self.product_slug}_{interface}"
+
     def save_checkpoint(self, entity: str, method: str):
-        """Write the current exploration position to data/explore_checkpoint as Entity::method."""
-        checkpoint = self.base_dir / "data" / "explore_checkpoint"
+        """Write the current exploration position to the interface-specific checkpoint."""
+        checkpoint = self._checkpoint_path()
         checkpoint.parent.mkdir(parents=True, exist_ok=True)
         checkpoint.write_text(f"{entity}::{method}")
 
     def load_checkpoint(self) -> "tuple[str, str] | tuple[None, None]":
         """Read the last exploration checkpoint, returning (entity, method) or (None, None)."""
-        checkpoint = self.base_dir / "data" / "explore_checkpoint"
+        checkpoint = self._checkpoint_path()
         if not checkpoint.exists():
             return None, None
         text = checkpoint.read_text().strip()

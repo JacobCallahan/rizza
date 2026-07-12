@@ -19,105 +19,25 @@ def _deep_copy_genes(genes):
     return [genes[0][:], genes[1][:]]
 
 
-@attr.s(slots=True)
-class InteractionResult:
-    """Interface-agnostic result that the RL agent consumes."""
-
-    success = attr.ib()
-    output_text = attr.ib()
-    status_category = attr.ib()
-    error_class = attr.ib()
-    raw = attr.ib()
-    validation_errors = attr.ib(factory=dict)
-    missing_params = attr.ib(factory=list)
+from rizza.interface_adapter import (  # noqa: F401
+    APIInterfaceAdapter,
+    CLIInterfaceAdapter,
+    InteractionResult,
+)
 
 
 class APIResultAdapter:
-    """Converts {"pass": ...} / {"fail": ...} dicts to InteractionResult."""
+    """Backward-compatible wrapper around APIInterfaceAdapter.adapt_result()."""
 
     def adapt(self, result):
-        if "pass" in result:
-            return InteractionResult(
-                success=True,
-                output_text=str(result["pass"]),
-                status_category="success",
-                error_class="",
-                raw=result,
-            )
-        fail_data = result.get("fail", {})
-        error_class = self._extract_error_class(fail_data)
-        output_text = self._flatten_to_text(fail_data)
-        status_category = self._categorize(fail_data, error_class)
-        from rizza.helpers.misc import extract_missing_params, extract_validation_errors
-
-        validation_errors = extract_validation_errors(fail_data)
-        missing_params = extract_missing_params(fail_data)
-        return InteractionResult(
-            success=False,
-            output_text=output_text,
-            status_category=status_category,
-            error_class=error_class,
-            raw=result,
-            validation_errors=validation_errors,
-            missing_params=missing_params,
-        )
-
-    def _extract_error_class(self, fail_data):
-        if not isinstance(fail_data, dict) or not fail_data:
-            return "unhandled"
-        return next(iter(fail_data))
-
-    def _flatten_to_text(self, data):
-        if isinstance(data, dict):
-            parts = [self._flatten_to_text(v) for v in data.values()]
-        elif isinstance(data, list | tuple):
-            parts = [self._flatten_to_text(item) for item in data]
-        elif isinstance(data, bytes | bytearray):
-            parts = [data.decode("utf-8", errors="replace")]
-        elif data is not None:
-            parts = [str(data)]
-        else:
-            parts = []
-        return " ".join(p for p in parts if p)
-
-    def _categorize(self, fail_data, error_class):
-        if error_class == "HTTPError":
-            text = self._flatten_to_text(fail_data.get("HTTPError", {}))
-            for code in ("500", "501", "502", "503", "504"):
-                if code in text:
-                    return "server_error"
-            return "client_error"
-        if error_class in (
-            "TypeError",
-            "ValueError",
-            "KeyError",
-            "AttributeError",
-            "RuntimeError",
-        ):
-            return "client_error"
-        return "unknown"
+        return APIInterfaceAdapter().adapt_result(result)
 
 
 class CLIResultAdapter:
-    """Converts CLI execution results to InteractionResult (future use)."""
+    """Backward-compatible wrapper around CLIInterfaceAdapter.adapt_result()."""
 
     def adapt(self, exit_code, stdout, stderr):
-        success = exit_code == 0
-        output_text = stderr if not success else stdout
-        return InteractionResult(
-            success=success,
-            output_text=output_text or "",
-            status_category=self._categorize(exit_code),
-            error_class=f"ExitCode_{exit_code}",
-            raw={"exit_code": exit_code, "stdout": stdout, "stderr": stderr},
-        )
-
-    def _categorize(self, exit_code):
-        if exit_code == 0:
-            return "success"
-        if exit_code in (500, 502, 503):
-            return "server_error"
-        return "client_error"
+        return CLIInterfaceAdapter().adapt_result(exit_code, stdout, stderr)
 
 
 class CategoricalStateEncoder:
@@ -479,19 +399,22 @@ def apply_action(
 ):
     """Apply a discrete action to genes, returning a new 2-list.
 
-    Invariants: len(result[0]) == len(result[1]), len(result[0]) >= 1.
+    Invariant: len(result[0]) == len(result[1]). Length is preserved for NOOP,
+    grown by at most one for ADD_PARAM, and shrunk by at most one (never below
+    the input length, and never below 1 once non-empty) for DROP_PARAM.
 
     field_recommendations is an optional dict {field_name: generator_name}
     used by TARGETED_SWAP to make informed mutations based on validation errors.
     add_params is an optional list of param names to add (for targeted ADD_PARAM).
     """
     new_genes = _deep_copy_genes(genes)
+    all_generators = [gen for pool in type_pools.values() for gen in pool]
 
     if action_id == ADD_PARAM:
         if add_params:
             for param in add_params:
                 if param in available_params and param not in new_genes[0]:
-                    pool = type_pools.get(param) or new_genes[1] or available_params
+                    pool = type_pools.get(param) or new_genes[1] or all_generators
                     if pool:
                         new_genes[0].append(param)
                         new_genes[1].append(random.choice(pool))
@@ -499,7 +422,7 @@ def apply_action(
             unused = [p for p in available_params if p not in new_genes[0]]
             if unused:
                 param = random.choice(unused)
-                pool = type_pools.get(param) or new_genes[1] or available_params
+                pool = type_pools.get(param) or new_genes[1] or all_generators
                 if pool:
                     new_genes[0].append(param)
                     new_genes[1].append(random.choice(pool))
@@ -544,9 +467,18 @@ class AgenticPayloadLearner:
     method = attr.ib(default="")
     interface = attr.ib(default="api")
     product = attr.ib(default="default")
+    version = attr.ib(default="stream")
 
     def __attrs_post_init__(self):
-        self.adapter = APIResultAdapter()
+        from rizza import interface_loader
+
+        adapter = interface_loader.get_current()
+        if adapter is not None:
+            self.adapter = adapter
+        else:
+            from rizza.interface_adapter import APIInterfaceAdapter
+
+            self.adapter = APIInterfaceAdapter()
         self.max_candidates = getattr(self.config, "max_candidates_per_generation", 5)
         self.max_steps = getattr(self.config, "max_steps_per_candidate", 5)
         self.use_embeddings = getattr(self.config, "use_embeddings", False)
@@ -631,14 +563,26 @@ class AgenticPayloadLearner:
         if not self.base_dir:
             return None
         ext = "dqn.pt" if self.use_embeddings else "qtable.json"
-        d = Path(self.base_dir) / "data" / "agentic" / self.product / self.interface
+        d = (
+            Path(self.base_dir)
+            / "data"
+            / "agentic"
+            / f"{self.product}-{self.version}"
+            / self.interface
+        )
         d.mkdir(parents=True, exist_ok=True)
         return d / ext
 
     def _recommender_path(self):
         if not self.base_dir:
             return None
-        d = Path(self.base_dir) / "data" / "agentic" / self.product / self.interface
+        d = (
+            Path(self.base_dir)
+            / "data"
+            / "agentic"
+            / f"{self.product}-{self.version}"
+            / self.interface
+        )
         d.mkdir(parents=True, exist_ok=True)
         return d / "gen_recommender.pt"
 
@@ -739,7 +683,7 @@ class AgenticPayloadLearner:
 
         buckets = {}
         for organism, result in org_results:
-            interaction = self.adapter.adapt(result)
+            interaction = self.adapter.adapt_result(result)
             if interaction.success:
                 continue
             if interaction.status_category == "server_error":
@@ -758,7 +702,7 @@ class AgenticPayloadLearner:
 
         items = []
         for organism, result in org_results:
-            interaction = self.adapter.adapt(result)
+            interaction = self.adapter.adapt_result(result)
             if interaction.success or interaction.status_category == "server_error":
                 continue
             embedding = self.encoder.get_embedding(interaction)
@@ -842,7 +786,7 @@ class AgenticPayloadLearner:
         r_targeted = getattr(reward_cfg, "targeted_success", 8)
 
         current_genes = _deep_copy_genes(organism.genes)
-        current_interaction = self.adapter.adapt(initial_result)
+        current_interaction = self.adapter.adapt_result(initial_result)
         current_points = organism.points
         baseline_genes = _deep_copy_genes(current_genes)
         best_genes = _deep_copy_genes(current_genes)
@@ -890,7 +834,7 @@ class AgenticPayloadLearner:
                 points = self.judge_fn(result)
                 fitness_cache[gene_key] = (result, points)
 
-            next_interaction = self.adapter.adapt(result)
+            next_interaction = self.adapter.adapt_result(result)
 
             if next_interaction.success:
                 reward = float(r_success)

@@ -154,8 +154,10 @@ def test_adapt_unhandled():
 
 
 def test_flatten_to_text_nested():
+    from rizza.interface_adapter import _flatten_to_text
+
     data = {"HTTPError": {"response": {"message": "bad value", "field": "name"}}}
-    text = adapter._flatten_to_text(data)
+    text = _flatten_to_text(data)
     assert "bad value" in text
     assert "name" in text
     assert len(text) > 0
@@ -962,14 +964,12 @@ def test_validation_override_forces_targeted_swap():
         validation_override_decay=1.0,
     )
     learner.policy.epsilon = 0.0  # greedy — would never randomly pick TARGETED_SWAP
+    learner.gen_recommender = MagicMock()  # override requires a recommender to be present
+    learner.gen_recommender.recommend.return_value = ("gen_alphanumeric", 1.0, MagicMock())
 
     ir_with_val = _make_ir(validation_errors={"label": ["bad"]})
-    genes = [["label"], ["gen_utf8"]]
-    state = learner.encoder.encode(ir_with_val, genes, 0, 0, 0)
-    _action = learner.policy.select_action(state)
-    # Without override, greedy policy won't pick TARGETED_SWAP for a fresh state
-    # The override in _run_episode would fix this, but we test the mechanism directly
-    assert True  # greedy policy is unpredictable for new states
+    action = learner._select_action_with_override(ADD_PARAM, ir_with_val)
+    assert action == TARGETED_SWAP
 
     # Now test the full episode path where the override takes effect
     org = _make_organism([["label"], ["gen_utf8"]], points=-200)
