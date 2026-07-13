@@ -1,4 +1,5 @@
 """Tests for rizza.helpers.config."""
+
 from pathlib import Path
 import tempfile
 
@@ -44,6 +45,20 @@ def test_load_checkpoint_missing(tmp_path):
     cfg = config.Config(cfg_dir=str(tmp_path))
     cfg.base_dir = tmp_path
     assert cfg.load_checkpoint() == (None, None)
+
+
+def test_rizza_directory_env_override(tmp_path, monkeypatch):
+    """RIZZA_DIRECTORY env var overrides the default ~/rizza base_dir."""
+    monkeypatch.setenv("RIZZA_DIRECTORY", str(tmp_path))
+    cfg = config.Config(cfg_dir=str(tmp_path))
+    assert cfg.base_dir == tmp_path
+
+
+def test_base_dir_defaults_to_home_without_env(monkeypatch):
+    """Without RIZZA_DIRECTORY set, base_dir falls back to ~/rizza."""
+    monkeypatch.delenv("RIZZA_DIRECTORY", raising=False)
+    cfg = config.Config(cfg_dir="tests/data/")
+    assert cfg.base_dir == Path.home() / "rizza"
 
 
 def test_positive_defaults_loaded():

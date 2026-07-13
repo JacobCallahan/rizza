@@ -1,4 +1,5 @@
 """Main module for rizza's interface."""
+
 import contextlib
 import datetime
 import json
@@ -724,7 +725,7 @@ def _q_value_lines(labels, q_values):
     max_label_len = max(len(lbl) for lbl, _, _ in combined) if combined else 0
     lines = []
     for lbl, qv, pct in combined:
-        lines.append(f"    {lbl:<{max_label_len}}  {qv:+.2f}" f"  [dim]({pct:.1f}%)[/dim]")
+        lines.append(f"    {lbl:<{max_label_len}}  {qv:+.2f}  [dim]({pct:.1f}%)[/dim]")
     return lines
 
 
@@ -793,7 +794,7 @@ def _knowledge_show_qtable(product, interface, data, top, action_labels):
         rprint(f"\n  [dim]Top {min(top, len(decoded))} states by best Q-value:[/dim]")
         for key, q_vals in decoded[:top]:
             status, err_cls, text = key[0], key[1], key[2]
-            label = f"{status} · {err_cls} · \"{text[:40]}{'...' if len(text) > 40 else ''}\""
+            label = f'{status} · {err_cls} · "{text[:40]}{"..." if len(text) > 40 else ""}"'
             rprint(f"    [dim]{label}[/dim]")
             best_idx = q_vals.index(max(q_vals))
             parts_row = []
@@ -1029,6 +1030,226 @@ def _version_sort_key(version):
         return tuple(int(p) for p in parts)
     except ValueError:
         return (998,)
+
+
+@cli.group()
+@click.pass_context
+def permutations(ctx):
+    """View permutation telemetry from GA exploration runs."""
+    pass
+
+
+def _open_telemetry_store(conf, version=None):
+    """Open a PermutationStore for the given config and optional version override."""
+    from rizza.helpers.telemetry import PermutationStore
+
+    db_dir = conf.telemetry_dir_for_version(version) if version else conf.telemetry_dir
+    db_path = db_dir / "permutations.db"
+    if not db_path.exists():
+        return None
+    return PermutationStore(db_path=db_path)
+
+
+@permutations.command(name="entity")
+@click.option("-e", "--entity", type=str, default=None, help="Filter to a specific entity.")
+@click.option("--version", type=str, default=None, help="Show telemetry for a specific version.")
+@click.pass_context
+def permutations_entity(ctx, entity, version):
+    """Per-method summary with pass/fail totals."""
+    conf = ctx.obj
+    store = _open_telemetry_store(conf, version)
+    if store is None:
+        click.echo("No telemetry data found. Run `rizza explore` first.")
+        return
+    try:
+        rows = store.query_method_summary(entity)
+        if not rows:
+            click.echo(
+                f"No telemetry data for entity {entity!r}."
+                if entity
+                else "No telemetry data found."
+            )
+            return
+        coverage = store.compute_coverage(entity)
+        if entity:
+            _render_entity_detail(rows, entity, coverage)
+        else:
+            _render_method_summary(rows, coverage)
+    finally:
+        store.close()
+
+
+@permutations.command(name="method")
+@click.option("-e", "--entity", type=str, required=True, help="Entity name.")
+@click.option("-m", "--method", type=str, required=True, help="Method name.")
+@click.option("--version", type=str, default=None, help="Show telemetry for a specific version.")
+@click.pass_context
+def permutations_method(ctx, entity, method, version):
+    """Hierarchical parameter triage tree for a specific method."""
+    conf = ctx.obj
+    store = _open_telemetry_store(conf, version)
+    if store is None:
+        click.echo("No telemetry data found. Run `rizza explore` first.")
+        return
+    try:
+        method_name = f"{entity}.{method}"
+        tree_data = store.query_method_tree(method_name)
+        if not tree_data:
+            click.echo(f"No permutation data for {method_name}.")
+            return
+        _render_method_tree(tree_data, method_name)
+    finally:
+        store.close()
+
+
+def _render_method_summary(rows, coverage):
+    """Render entity-level summary table aggregated across methods."""
+    from collections import OrderedDict
+
+    from rich.table import Table
+
+    entities = OrderedDict()
+    for r in rows:
+        name = r["name"]
+        entity = name.split(".", 1)[0] if "." in name else name
+        acc = entities.setdefault(entity, {"perms": 0, "passes": 0, "fails": 0})
+        acc["perms"] += r["total_permutations"] or 0
+        acc["passes"] += r["total_passes"] or 0
+        acc["fails"] += r["total_fails"] or 0
+
+    table = Table(title="Permutation Summary", show_lines=False)
+    table.add_column("Entity", style="bold cyan")
+    table.add_column("Perms", justify="right")
+    table.add_column("Passes", justify="right", style="green")
+    table.add_column("Fails", justify="right", style="red")
+    table.add_column("Pass Rate", justify="right")
+
+    for entity, acc in entities.items():
+        total = acc["passes"] + acc["fails"]
+        rate = acc["passes"] * 100.0 / max(total, 1)
+        if rate >= 10:
+            rate_style = "bold green"
+        elif rate >= 1:
+            rate_style = "yellow"
+        else:
+            rate_style = "red"
+
+        table.add_row(
+            entity,
+            str(acc["perms"]),
+            str(acc["passes"]),
+            str(acc["fails"]),
+            f"[{rate_style}]{rate:.1f}%[/{rate_style}]",
+        )
+
+    console.print()
+    console.print(table)
+    tested, possible = coverage
+    console.print(f"  [dim]Tested {tested:,} / {possible:,} permutations[/dim]")
+    console.print()
+
+
+def _render_entity_detail(rows, entity_name, coverage):
+    """Render per-method breakdown for a single entity."""
+    from rich.table import Table
+
+    table = Table(title=f"{entity_name} — Method Breakdown", show_lines=False)
+    table.add_column("Method", style="bold")
+    table.add_column("Perms", justify="right")
+    table.add_column("Passes", justify="right", style="green")
+    table.add_column("Fails", justify="right", style="red")
+    table.add_column("Pass Rate", justify="right")
+
+    for r in rows:
+        name = r["name"]
+        method = name.split(".", 1)[1] if "." in name else name
+
+        passes = r["total_passes"] or 0
+        fails = r["total_fails"] or 0
+        total = passes + fails
+        rate = passes * 100.0 / max(total, 1)
+        if rate >= 10:
+            rate_style = "bold green"
+        elif rate >= 1:
+            rate_style = "yellow"
+        else:
+            rate_style = "red"
+
+        table.add_row(
+            method,
+            str(r["total_permutations"] or 0),
+            str(passes),
+            str(fails),
+            f"[{rate_style}]{rate:.1f}%[/{rate_style}]",
+        )
+
+    console.print()
+    console.print(table)
+    tested, possible = coverage
+    console.print(f"  [dim]Tested {tested:,} / {possible:,} permutations[/dim]")
+    console.print()
+
+
+def _render_method_tree(tree_data, method_name):
+    """Render hierarchical parameter triage tree with range and volatility."""
+    from collections import defaultdict
+
+    from rich.tree import Tree
+
+    # Build nested structure: param -> status -> [{generator, pass_count, fail_count}]
+    structure = defaultdict(lambda: defaultdict(list))
+    seen = set()
+    for r in tree_data:
+        key = (r["param_name"], r["status"], r["generator_name"])
+        if key in seen:
+            continue
+        seen.add(key)
+        structure[r["param_name"]][r["status"]].append(
+            {
+                "generator": r["generator_name"],
+                "pass_count": r["pass_count"],
+                "fail_count": r["fail_count"],
+            }
+        )
+
+    tree = Tree(f"[bold]Method: {method_name}[/bold]")
+
+    for param_name in sorted(structure):
+        param_branch = tree.add(f"[bold cyan]Parameter: {param_name}[/bold cyan]")
+
+        for status in sorted(structure[param_name]):
+            generators = structure[param_name][status]
+            rates = []
+            for g in generators:
+                total = g["pass_count"] + g["fail_count"]
+                rates.append(g["pass_count"] * 100.0 / max(total, 1))
+
+            spread = max(rates) - min(rates) if len(rates) >= 2 else 0.0
+            status_branch = param_branch.add(f"Status: {status} [dim](range: {spread:.1f}%)[/dim]")
+
+            for g in generators:
+                total = g["pass_count"] + g["fail_count"]
+                p = g["pass_count"] / max(total, 1)
+                volatility = p * (1.0 - p)
+                rate = p * 100.0
+
+                if rate >= 50:
+                    rate_style = "green"
+                elif rate > 0:
+                    rate_style = "yellow"
+                else:
+                    rate_style = "red"
+
+                status_branch.add(
+                    f"[{rate_style}]{g['generator']}[/{rate_style}]"
+                    f" — {rate:.1f}% pass"
+                    f" ({total} hits,"
+                    f" volatility: {volatility:.3f})"
+                )
+
+    console.print()
+    console.print(tree)
+    console.print()
 
 
 if __name__ == "__main__":

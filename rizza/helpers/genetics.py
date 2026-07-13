@@ -108,6 +108,7 @@ class Population:
         immigration_rate=5,
         available_genes=None,
         required_genes=None,
+        vet_fn=None,
     ):
         """Evolve the population one generation.
 
@@ -119,6 +120,8 @@ class Population:
         :param available_genes: Optional list of all valid values for genes[0] (param names);
             enables variable-length add/remove operators during mutation.
         :param required_genes: Optional set of param names that must never be removed.
+        :param vet_fn: Optional callable(organism) -> bool; immigrants that fail are regenerated
+            (up to 3 retries).
         """
         self.sort_population()
         best_score = self.population[0].points
@@ -138,7 +141,7 @@ class Population:
             self._stagnation_counter += 1
 
         # Partial restart when stagnated: keep top 20%, regenerate the rest
-        if self._stagnation_counter >= self.population_count * 2:
+        if self._stagnation_counter >= max(3, self.population_count // 8):
             keep_count = max(1, int(self.population_count * 0.2))
             survivors = self.population[:keep_count]
             fresh = []
@@ -180,6 +183,12 @@ class Population:
         while len(next_generation) < self.population_count:
             org = Organism(genes=self.gene_base[:])
             org.generate_genes(gen_func=self.generator_function, count=self.gene_length)
+            if vet_fn:
+                for _retry in range(3):
+                    if vet_fn(org):
+                        break
+                    org = Organism(genes=self.gene_base[:])
+                    org.generate_genes(gen_func=self.generator_function, count=self.gene_length)
             next_generation.append(org)
 
         self.population = next_generation
