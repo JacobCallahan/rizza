@@ -47,6 +47,7 @@ def _make_config(**kwargs):
     policy.gamma = 0.95
     policy.epsilon = 1.0  # always explore in tests
     policy.epsilon_decay = 1.0
+    policy.epsilon_min = 0.05
     cfg.policy = policy
     reward = MagicMock()
     reward.success = 20
@@ -966,6 +967,8 @@ def test_validation_override_forces_targeted_swap():
     learner.policy.epsilon = 0.0  # greedy — would never randomly pick TARGETED_SWAP
     learner.gen_recommender = MagicMock()  # override requires a recommender to be present
     learner.gen_recommender.recommend.return_value = ("gen_alphanumeric", 1.0, MagicMock())
+    learner.gen_recommender.epsilon = 0.3
+    learner.gen_recommender.epsilon_min = 0.05
 
     ir_with_val = _make_ir(validation_errors={"label": ["bad"]})
     action = learner._select_action_with_override(ADD_PARAM, ir_with_val)
@@ -1100,3 +1103,18 @@ def test_load_old_checkpoint_uses_config_default():
         learner2.base_dir = tmpdir
         learner2.load_policy()
         assert abs(learner2.validation_override_prob - 0.75) < 1e-6
+
+
+# ── Epsilon floor ────────────────────────────────────────────────────────────
+
+
+def test_epsilon_floor_prevents_zero():
+    """QTablePolicy.update() clamps epsilon to epsilon_min, never reaching 0."""
+    from rizza.agentic_tester import QTablePolicy
+
+    policy = QTablePolicy(n_actions=3, epsilon=0.1, epsilon_decay=0.5, epsilon_min=0.05)
+    state = ("test",)
+    next_state = ("test2",)
+    for _ in range(50):
+        policy.update(state, 0, 1.0, next_state)
+    assert policy.epsilon >= 0.05

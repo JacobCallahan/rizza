@@ -1,5 +1,7 @@
 """Project configuration helpers."""
+
 import logging
+import os
 from pathlib import Path
 import shutil
 
@@ -105,7 +107,8 @@ class Config:
 
     def __attrs_post_init__(self):
         """Load configuration from rizza.pconf using picoconf."""
-        self.base_dir = Path.home().joinpath("rizza")
+        rizza_directory = os.environ.get("RIZZA_DIRECTORY")
+        self.base_dir = Path(rizza_directory) if rizza_directory else Path.home().joinpath("rizza")
         if "tests" in str(self.cfg_dir):
             self.cfg_dir = Path().joinpath(self.cfg_dir)
         elif self.cfg_dir != str(Path(self.cfg_dir).absolute()):
@@ -276,6 +279,19 @@ class Config:
         """Return the data directory for genetic tests, namespaced by product-version/interface."""
         interface = getattr(self.rizza, "interface", "api")
         return self.base_dir / "data" / "genetic_tests" / self.product_slug / interface
+
+    @property
+    def telemetry_dir(self):
+        """Return the data directory for telemetry, namespaced by product-version/interface."""
+        interface = getattr(self.rizza, "interface", "api")
+        return self.base_dir / "data" / "telemetry" / self.product_slug / interface
+
+    def telemetry_dir_for_version(self, version):
+        """Return the telemetry directory for an arbitrary version."""
+        interface = getattr(self.rizza, "interface", "api")
+        name = getattr(self.rizza, "product_name", "satellite")
+        slug = f"{name}-{_version_minor(version)}"
+        return self.base_dir / "data" / "telemetry" / slug / interface
 
     def genetic_tests_dir_for_version(self, version):
         """Return the genetic tests directory for an arbitrary version."""

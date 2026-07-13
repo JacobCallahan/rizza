@@ -21,6 +21,7 @@ from rizza import entity_tester
 from rizza.helpers import genetics
 from rizza.helpers.logging import console
 from rizza.helpers.misc import dict_search
+from rizza.helpers.telemetry import PermutationStore
 
 logger = logging.getLogger(__name__)
 
@@ -349,6 +350,19 @@ class GeneticEntityTester:
         else:
             self._agentic_learner = None
 
+        self._telemetry_store = None
+
+    @staticmethod
+    def _genes_to_arg_dict(genes):
+        """Extract a deduped {param: input} dict from 2-list genes."""
+        seen = set()
+        arg_dict = {}
+        for param, inpt in zip(genes[0], genes[1], strict=False):
+            if param not in seen:
+                seen.add(param)
+                arg_dict[param] = inpt
+        return arg_dict
+
     def _build_type_pools(self):
         """Build a {param_name: [compatible_inputs]} map for __init__ + method params."""
         if not self._entity_cls:
@@ -376,6 +390,21 @@ class GeneticEntityTester:
                     if entity_name:
                         field_info = {**field_info, "entity": entity_name}
                 pools[param] = get_compatible_inputs(field_info, all_inputs, field_name=param)
+
+        # Pass 2: unannotated params — apply name-based FK heuristic
+        all_sig_params = set()
+        for source in (self._entity_cls.__init__, self._method):
+            if source:
+                sig = inspect.signature(source)
+                all_sig_params.update(p for p in sig.parameters if p != "self")
+
+        genetic_inputs = [n for n in all_inputs if "genetic" in n]
+        for param in all_sig_params:
+            if param in pools:
+                continue
+            entity_name = _entity_from_param_name(param, known_entity_names_lower)
+            if entity_name:
+                pools[param] = genetic_inputs
 
         return pools
 
@@ -458,12 +487,13 @@ class GeneticEntityTester:
             config=self.config,
         )
 
-    def _create_gene_base(self):
+    def _create_gene_base(self, poison_pairs=None):
         """Create a valid genetic base to evolve on.
 
         Required params (no default) are always included. Additional optional
         params are randomly sampled on top.
 
+        :param poison_pairs: Optional set of (param, generator) tuples to avoid.
         :returns: 2-list [param_names, param_inputs]
         """
         all_inputs = list(
@@ -489,9 +519,41 @@ class GeneticEntityTester:
                 pool = [g for g in pool if not g.startswith("genetic_")]
                 if not pool:
                     pool = all_inputs
+            if poison_pairs:
+                filtered = [g for g in pool if (param, g) not in poison_pairs]
+                if filtered:
+                    pool = filtered
             param_inputs.append(random.choice(pool) if pool else random.choice(all_inputs))
 
         return [params, param_inputs]
+
+    def _init_telemetry(self, mock):
+        """Open the telemetry store for this run, unless in mock mode."""
+        if mock:
+            return
+        try:
+            self._telemetry_store = PermutationStore.from_config(self.config)
+        except Exception as err:
+            logger.debug(f"Telemetry store init failed: {err}")
+
+    def _flush_telemetry(self):
+        """Flush buffered telemetry records to disk, if the store is open."""
+        if self._telemetry_store is not None:
+            self._telemetry_store.flush()
+
+    def _close_telemetry(self):
+        """Flush and close the telemetry store, if it was opened for this run."""
+        if self._telemetry_store is not None:
+            self._telemetry_store.close()
+            self._telemetry_store = None
+
+    def _record_telemetry(self, organism, result):
+        """Record a tested organism's outcome to the telemetry store, if enabled."""
+        if self._telemetry_store is None:
+            return
+        arg_dict = self._genes_to_arg_dict(organism.genes)
+        method_name = f"{self.entity}.{self.method}"
+        self._telemetry_store.record(method_name, arg_dict, "pass" in result)
 
     def _apply_agentic_improvements(
         self, org_results, fitness_cache, population, generation, suffix=""
@@ -504,6 +566,7 @@ class GeneticEntityTester:
             org.genes = new_genes
             org.points = new_points
             fitness_cache[str(new_genes)] = (new_result, new_points)
+            self._record_telemetry(org, new_result)
             if "pass" in new_result and not self.seek_bad and self._verify_organism(org):
                 self._save_organism(org)
                 logger.info(
@@ -515,6 +578,88 @@ class GeneticEntityTester:
             population.sort_population()
         return False
 
+    def _build_vet_fn(self, method_name):
+        """Build a vetting function that rejects known-bad organisms via telemetry."""
+        if self._telemetry_store is None:
+            return None
+
+        def vet(organism):
+            arg_dict = self._genes_to_arg_dict(organism.genes)
+            return not self._telemetry_store.is_known_bad(method_name, arg_dict)
+
+        return vet
+
+    def _load_poison_pairs(self, mock=False):
+        """Load poison pairs from telemetry; returns (poison_pairs, gene_gen)."""
+        genetics_cfg = self.config.rizza.genetics
+        poison_pairs = None
+        if not mock and getattr(genetics_cfg, "vet_organisms", True):
+            try:
+                store = PermutationStore.from_config(self.config)
+                method_name = f"{self.entity}.{self.method}"
+                min_attempts = getattr(genetics_cfg, "poison_pair_min_attempts", 10)
+                poison_pairs = store.get_poison_pairs(method_name, min_attempts=min_attempts)
+                store.close()
+                if poison_pairs:
+                    logger.debug(f"Loaded {len(poison_pairs)} poison pairs for {method_name}")
+            except Exception as err:
+                logger.debug(f"Could not load poison pairs: {err}")
+                poison_pairs = None
+
+        gene_gen = (
+            (lambda: self._create_gene_base(poison_pairs=poison_pairs))
+            if poison_pairs
+            else self._create_gene_base
+        )
+        return poison_pairs, gene_gen
+
+    def _create_population(self, gene_gen):
+        """Build a Population from the gene generator; returns it or raises."""
+        genetics_cfg = self.config.rizza.genetics
+        population = genetics.Population(
+            gene_base=[gene_gen()],
+            population_count=self.population_count,
+            generator_function=gene_gen,
+            gene_length=1,
+            mutate=True,
+            rev_pop_sort=not self.seek_bad,
+            crossover_method=getattr(genetics_cfg, "crossover_method", "single_point"),
+        )
+        if not self.fresh:
+            best = self._load_test()
+            if best:
+                population.population[0].genes = best
+        return population
+
+    def _setup_progress(self, label_suffix=""):
+        """Set up Rich progress bars; returns (progress, gen_task, org_task, owns)."""
+        genetics_cfg = self.config.rizza.genetics
+        depth = max(0, getattr(genetics_cfg, "recursion_depth", 0))
+        indent = "  " * depth
+
+        owns = getattr(self.config, "_progress", None) is None
+        if owns:
+            self.config._progress = _make_progress()
+            self.config._progress.start()
+
+        progress = self.config._progress
+        gen_label = f"{indent}[bold]{self.entity}[/bold].[dim]{self.method}[/dim]{label_suffix}"
+        gen_task = progress.add_task(gen_label, total=self.max_generations)
+        org_task = progress.add_task(
+            f"{indent}  [dim]generation[/dim]",
+            total=self.population_count,
+            visible=False,
+        )
+        return progress, gen_label, gen_task, org_task, owns
+
+    def _teardown_progress(self, progress, gen_task, org_task, owns):
+        """Remove progress tasks and stop the bar if we own it."""
+        progress.remove_task(org_task)
+        progress.remove_task(gen_task)
+        if owns:
+            self.config._progress.stop()
+            self.config._progress = None
+
     def run(self, mock=False, save_only_passed=True):
         """Run a population attempting to maximize desired results."""
         if not self._method and not mock:
@@ -525,43 +670,21 @@ class GeneticEntityTester:
             return None
 
         genetics_cfg = self.config.rizza.genetics
+        _poison_pairs, gene_gen = self._load_poison_pairs(mock)
+
         try:
-            population = genetics.Population(
-                gene_base=[self._create_gene_base()],
-                population_count=self.population_count,
-                generator_function=self._create_gene_base,
-                gene_length=1,
-                mutate=True,
-                rev_pop_sort=not self.seek_bad,
-                crossover_method=getattr(genetics_cfg, "crossover_method", "single_point"),
-            )
+            population = self._create_population(gene_gen)
         except Exception as err:
             logger.error(f"Unable to create a population due to: {err}")
             return False
 
-        if not self.fresh:
-            best = self._load_test()
-            if best:
-                population.population[0].genes = best
-
-        depth = max(0, getattr(genetics_cfg, "recursion_depth", 0))
-        indent = "  " * depth
-
-        _owns_progress = getattr(self.config, "_progress", None) is None
-        if _owns_progress:
-            self.config._progress = _make_progress()
-            self.config._progress.start()
-
-        progress = self.config._progress
-        gen_label = f"{indent}[bold]{self.entity}[/bold].[dim]{self.method}[/dim]"
-        gen_task = progress.add_task(gen_label, total=self.max_generations)
-        org_task = progress.add_task(
-            f"{indent}  [dim]generation[/dim]",
-            total=self.population_count,
-            visible=False,
-        )
+        progress, gen_label, gen_task, org_task, _owns_progress = self._setup_progress()
 
         _fitness_cache = {}
+        vet_fn = None
+        self._init_telemetry(mock)
+        if not mock and getattr(genetics_cfg, "vet_organisms", True):
+            vet_fn = self._build_vet_fn(f"{self.entity}.{self.method}")
         try:
             for generation in range(self.max_generations):
                 _org_results = []
@@ -591,6 +714,7 @@ class GeneticEntityTester:
                     progress.advance(org_task)
                     if not mock:
                         _org_results.append((organism, result))
+                        self._record_telemetry(organism, result)
 
                     if "pass" in result and not mock and not self.seek_bad:
                         if not self._verify_organism(organism):
@@ -642,10 +766,12 @@ class GeneticEntityTester:
                     type_pools=self._type_pools,
                     tournament_size=getattr(genetics_cfg, "tournament_size", 3),
                     elite_percentage=getattr(genetics_cfg, "elite_percentage", 5),
-                    immigration_rate=getattr(genetics_cfg, "immigration_rate", 5),
+                    immigration_rate=getattr(genetics_cfg, "immigration_rate", 12),
                     available_genes=self._available_params,
                     required_genes=self._required_params,
+                    vet_fn=vet_fn,
                 )
+                self._flush_telemetry()
 
             if not mock and not save_only_passed and population.population:
                 self._save_organism(population.population[0])
@@ -656,11 +782,8 @@ class GeneticEntityTester:
                     f"exhausted {self.max_generations} generations without passing"
                 )
         finally:
-            progress.remove_task(org_task)
-            progress.remove_task(gen_task)
-            if _owns_progress:
-                self.config._progress.stop()
-                self.config._progress = None
+            self._close_telemetry()
+            self._teardown_progress(progress, gen_task, org_task, _owns_progress)
 
     def run_best(self):
         """Pull the best saved test, if any, run it, and return the id.
@@ -695,15 +818,25 @@ class GeneticEntityTester:
         """Load and execute the saved test; return full validation details or None.
 
         Unlike run_best(), this captures actual resolved argument values and the full
-        API response for reporting purposes.
+        API response for reporting purposes. The outcome is also recorded to the
+        telemetry store so that validation runs contribute to permutation coverage.
 
         Sets replay mode — see run_best() docstring.
         """
         token = _replay_mode.set(True)
+        self._init_telemetry(mock=False)
         try:
             test = self._load_test()
             if not test:
                 return None
+
+            if self.method != "create":
+                try:
+                    create_tester = GeneticEntityTester(self.config, self.entity, "create")
+                    create_tester.run_best()
+                except Exception:
+                    pass
+
             task = self._genes_to_task(test)
             try:
                 details = task.execute(_return_details=True)
@@ -713,6 +846,10 @@ class GeneticEntityTester:
             result_dict = details["result"]
             resolved_args = details["resolved_args"]
             passed = "pass" in result_dict
+            if self._telemetry_store is not None:
+                self._telemetry_store.record(
+                    f"{self.entity}.{self.method}", self._genes_to_arg_dict(test), passed
+                )
             return {
                 "test_name": self.test_name,
                 "entity": self.entity,
@@ -724,6 +861,7 @@ class GeneticEntityTester:
                 "response": result_dict.get("pass") if passed else result_dict.get("fail"),
             }
         finally:
+            self._close_telemetry()
             _replay_mode.reset(token)
 
 
@@ -769,45 +907,23 @@ class AsyncGeneticEntityTester(GeneticEntityTester):
             return None
 
         genetics_cfg = self.config.rizza.genetics
+        _poison_pairs, gene_gen = self._load_poison_pairs(mock)
+
         try:
-            self._population = genetics.Population(
-                gene_base=[self._create_gene_base()],
-                population_count=self.population_count,
-                generator_function=self._create_gene_base,
-                gene_length=1,
-                mutate=True,
-                rev_pop_sort=not self.seek_bad,
-                crossover_method=getattr(genetics_cfg, "crossover_method", "single_point"),
-            )
+            self._population = self._create_population(gene_gen)
         except Exception as err:
             logger.error(f"Unable to create a population due to: {err}")
             return False
 
-        if not self.fresh:
-            best = self._load_test()
-            if best:
-                self._population.population[0].genes = best
-
-        depth = max(0, getattr(genetics_cfg, "recursion_depth", 0))
-        indent = "  " * depth
-
-        _owns_progress = getattr(self.config, "_progress", None) is None
-        if _owns_progress:
-            self.config._progress = _make_progress()
-            self.config._progress.start()
-
-        progress = self.config._progress
-        gen_label = (
-            f"{indent}[bold]{self.entity}[/bold].[dim]{self.method}[/dim] [italic]async[/italic]"
-        )
-        gen_task = progress.add_task(gen_label, total=self.max_generations)
-        org_task = progress.add_task(
-            f"{indent}  [dim]generation[/dim]",
-            total=self.population_count,
-            visible=False,
+        progress, gen_label, gen_task, org_task, _owns_progress = self._setup_progress(
+            " [italic]async[/italic]"
         )
 
         _fitness_cache = {}
+        vet_fn = None
+        self._init_telemetry(mock)
+        if not mock and getattr(genetics_cfg, "vet_organisms", True):
+            vet_fn = self._build_vet_fn(f"{self.entity}.{self.method}")
         try:
             for generation in range(self.max_generations):
                 _org_results = []
@@ -830,6 +946,7 @@ class AsyncGeneticEntityTester(GeneticEntityTester):
                         gene_key = str(organism.genes)
                         _fitness_cache[gene_key] = (result, organism.points)
                         _org_results.append((organism, result))
+                        self._record_telemetry(organism, result)
                     if "pass" in result and not mock and not self.seek_bad:
                         passed_organism = organism
                     progress.advance(org_task)
@@ -885,9 +1002,12 @@ class AsyncGeneticEntityTester(GeneticEntityTester):
                     type_pools=self._type_pools,
                     tournament_size=getattr(genetics_cfg, "tournament_size", 3),
                     elite_percentage=getattr(genetics_cfg, "elite_percentage", 5),
-                    immigration_rate=getattr(genetics_cfg, "immigration_rate", 5),
+                    immigration_rate=getattr(genetics_cfg, "immigration_rate", 12),
                     available_genes=self._available_params,
+                    required_genes=self._required_params,
+                    vet_fn=vet_fn,
                 )
+                self._flush_telemetry()
 
             if not mock and not save_only_passed and self._population.population:
                 self._save_organism(self._population.population[0])
@@ -898,8 +1018,5 @@ class AsyncGeneticEntityTester(GeneticEntityTester):
                     f"exhausted {self.max_generations} generations without passing"
                 )
         finally:
-            progress.remove_task(org_task)
-            progress.remove_task(gen_task)
-            if _owns_progress:
-                self.config._progress.stop()
-                self.config._progress = None
+            self._close_telemetry()
+            self._teardown_progress(progress, gen_task, org_task, _owns_progress)

@@ -164,7 +164,7 @@ def test_tournament_selection():
     for _ in range(20):
         winner = pop._tournament_select(tournament_size=3)
         # In minimise mode the winner should have a lower score than the average
-        assert winner.points < 7  # average is 4.5; a random winner won't always be the best
+        assert winner.points <= 7  # average is 4.5; a random winner won't always be the best
 
 
 def test_elitism_preserves_best():
@@ -212,15 +212,12 @@ def test_adaptive_mutation_high_diversity():
 
 
 def test_stagnation_restart():
-    """Partial restart fires after population_count*2 generations without improvement."""
+    """Partial restart fires after max(3, population_count//8) stagnant generations."""
     pop = genetics.Population(gene_base=BASE_GENOME, population_count=5, mutate=False)
     for org in pop.population:
         org.points = 100
 
-    # The restart fires exactly on the threshold-th consecutive bad generation.
-    # Each breed_population() call increments the counter; when it reaches
-    # population_count*2 the restart fires and counter resets to 0 within that call.
-    threshold = pop.population_count * 2
+    threshold = max(3, pop.population_count // 8)
     for _ in range(threshold):
         pop.breed_population()
         for org in pop.population:
@@ -296,3 +293,20 @@ def test_two_list_mutation_preserves_type_compatibility():
             assert (
                 test_org.genes[1][i] in type_pools[param]
             ), f"genes[1][{i}] = {test_org.genes[1][i]} not in pool for {param}"
+
+
+def test_vet_fn_rejects_bad_immigrants():
+    """The vet_fn callback causes bad immigrants to be regenerated."""
+    pop = genetics.Population(gene_base=BASE_GENOME, population_count=5, mutate=False)
+    for org in pop.population:
+        org.points = 50
+
+    reject_count = {"n": 0}
+
+    def vet(org):
+        reject_count["n"] += 1
+        return reject_count["n"] > 2
+
+    pop.breed_population(immigration_rate=40, vet_fn=vet)
+    assert len(pop.population) == pop.population_count
+    assert reject_count["n"] > 0

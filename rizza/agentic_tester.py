@@ -133,13 +133,22 @@ class EmbeddingStateEncoder:
 class QTablePolicy:
     """Tabular Q-learning with epsilon-greedy exploration."""
 
-    def __init__(self, n_actions=4, alpha=0.1, gamma=0.95, epsilon=0.3, epsilon_decay=0.995):
+    def __init__(
+        self,
+        n_actions=4,
+        alpha=0.1,
+        gamma=0.95,
+        epsilon=0.3,
+        epsilon_decay=0.995,
+        epsilon_min=0.05,
+    ):
         self.q_table = {}
         self.n_actions = n_actions
         self.alpha = alpha
         self.gamma = gamma
         self.epsilon = epsilon
         self.epsilon_decay = epsilon_decay
+        self.epsilon_min = epsilon_min
 
     def select_action(self, state_key):
         if random.random() < self.epsilon:
@@ -157,7 +166,7 @@ class QTablePolicy:
         self.q_table[state_key][action] = current_q + self.alpha * (
             reward + self.gamma * max_next_q - current_q
         )
-        self.epsilon *= self.epsilon_decay
+        self.epsilon = max(self.epsilon * self.epsilon_decay, self.epsilon_min)
 
 
 class DQNPolicy:
@@ -174,6 +183,7 @@ class DQNPolicy:
         gamma=0.95,
         epsilon=0.3,
         epsilon_decay=0.995,
+        epsilon_min=0.05,
     ):
         import torch
         from torch import nn
@@ -184,6 +194,7 @@ class DQNPolicy:
         self.gamma = gamma
         self.epsilon = epsilon
         self.epsilon_decay = epsilon_decay
+        self.epsilon_min = epsilon_min
 
         self.q_net = nn.Sequential(
             nn.Linear(state_dim, hidden_dim),
@@ -230,7 +241,7 @@ class DQNPolicy:
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-        self.epsilon *= self.epsilon_decay
+        self.epsilon = max(self.epsilon * self.epsilon_decay, self.epsilon_min)
 
     # Q-table-compatible interface for AgenticPayloadLearner
     def update(self, state, action, reward, next_state):
@@ -257,6 +268,7 @@ class GeneratorRecommenderNet:
         lr=1e-3,
         epsilon=0.3,
         epsilon_decay=0.995,
+        epsilon_min=0.05,
     ):
         import torch
         from torch import nn
@@ -267,6 +279,7 @@ class GeneratorRecommenderNet:
         self._gen_to_idx = {name: i for i, name in enumerate(self.generator_names)}
         self.epsilon = epsilon
         self.epsilon_decay = epsilon_decay
+        self.epsilon_min = epsilon_min
 
         self.tokenizer, self.model, _ = _load_hf_model(model_name, token)
 
@@ -340,7 +353,7 @@ class GeneratorRecommenderNet:
         if len(self.replay_buffer) > self.buffer_size:
             self.replay_buffer.pop(0)
 
-        self.epsilon *= self.epsilon_decay
+        self.epsilon = max(self.epsilon * self.epsilon_decay, self.epsilon_min)
         self._train_step()
 
     def _train_step(self):
@@ -498,6 +511,7 @@ class AgenticPayloadLearner:
                 "gamma": getattr(policy_cfg, "gamma", 0.95),
                 "epsilon": getattr(policy_cfg, "epsilon", 0.3),
                 "epsilon_decay": getattr(policy_cfg, "epsilon_decay", 0.995),
+                "epsilon_min": getattr(policy_cfg, "epsilon_min", 0.05),
             }
             if policy_cfg
             else {}
@@ -531,6 +545,7 @@ class AgenticPayloadLearner:
                     generator_names=generator_names,
                     epsilon=policy_kwargs.get("epsilon", 0.3),
                     epsilon_decay=policy_kwargs.get("epsilon_decay", 0.995),
+                    epsilon_min=policy_kwargs.get("epsilon_min", 0.05),
                     batch_size=rec_batch_size,
                 )
             except Exception as e:
@@ -672,7 +687,9 @@ class AgenticPayloadLearner:
                 new_genes, new_points, new_result = outcome
                 improvements.append((organism, new_genes, new_points, new_result))
         if elites:
-            self.validation_override_prob *= self.validation_override_decay
+            self.validation_override_prob = max(
+                self.validation_override_prob * self.validation_override_decay, 0.1
+            )
             self.save_policy()
         return improvements
 
@@ -889,7 +906,10 @@ class AgenticPayloadLearner:
 
         # Decay recommender epsilon per-episode, independent of TARGETED_SWAP selection
         if self.gen_recommender is not None:
-            self.gen_recommender.epsilon *= self._recommender_epsilon_decay_per_episode
+            self.gen_recommender.epsilon = max(
+                self.gen_recommender.epsilon * self._recommender_epsilon_decay_per_episode,
+                self.gen_recommender.epsilon_min,
+            )
 
         if best_points > organism.points:
             return best_genes, best_points, best_result
