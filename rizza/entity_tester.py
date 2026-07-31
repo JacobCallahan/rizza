@@ -7,6 +7,7 @@ import attr
 logger = logging.getLogger(__name__)
 
 from rizza.helpers import inputs
+from rizza.helpers.inputs import get_entity_id
 from rizza.helpers.misc import (
     dictionary_exclusion,
     form_input,
@@ -184,12 +185,117 @@ class EntityTestTask:
     arg_dict = attr.ib(validator=attr.validators.instance_of(dict))
     config = attr.ib(default=None, repr=False)
 
-    def execute(self, mock=False, _return_details=False):
+    def _resolve_entity_and_method(self):
+        """Look up the entity class and method object, or a fail dict if either is missing."""
+        pulled_entities = EntityTester.pull_entities()
+        entity_cls = pulled_entities.get(self.entity)
+        if not entity_cls:
+            logger.error(f"Entity '{self.entity}' not found in apix module.")
+            return None, None, {"fail": f"Entity '{self.entity}' not found."}
+
+        method_obj = getattr(entity_cls, self.method, None)
+        if not method_obj:
+            logger.error(f"Method '{self.method}' not found on entity '{self.entity}'.")
+            return None, None, {"fail": f"Method '{self.method}' not found."}
+
+        return entity_cls, method_obj, None
+
+    def _resolve_args(self, field_info_map, init_required):
+        """Resolve arg_dict input method names to actual values.
+
+        :returns: (resolved_args, dep_failures) where dep_failures lists args whose
+            required dependency could not be resolved.
+        """
+        imeths = EntityTester.pull_input_methods()
+        resolved_args = {}
+        dep_failures = []
+        for arg, inpt in self.arg_dict.items():
+            field_info = field_info_map.get(arg)
+            value = form_input(inpt, imeths, arg, self.config, field_info)
+            if value == "~":
+                continue
+            if ("genetic" in inpt or inpt == "get_entity_id") and value in (-1, None):
+                is_required = (
+                    field_info.get("required", False) if field_info else False
+                ) or arg in init_required
+                if is_required:
+                    dep_failures.append(arg)
+            else:
+                resolved_args[arg] = value
+        return resolved_args, dep_failures
+
+    def _dependency_fail(self, message):
+        logger.warning(message)
+        return {"fail": {"DependencyError": [message]}}
+
+    def _call_with_id_retry(self, entity_inst, method_args):
+        """Call the target method, resolving and retrying with an entity ID on failure."""
+        try:
+            return getattr(entity_inst, self.method)(**method_args), None
+        except (AttributeError, RuntimeError) as ae:
+            if "id" not in str(ae):
+                raise
+            logger.debug(
+                f"{self.entity}.{self.method} requires an entity ID; "
+                f"attempting dependency resolution"
+            )
+            entity_id = get_entity_id(self.config, self.entity)
+            if not entity_id or entity_id in (-1, "~"):
+                fail_msg = (
+                    f"Dependency resolution failed for {self.entity}.{self.method}: "
+                    f"could not resolve {self.entity} entity ID"
+                )
+                return None, self._dependency_fail(fail_msg)
+            entity_inst.id = entity_id
+            return getattr(entity_inst, self.method)(**method_args), None
+
+    @staticmethod
+    def _format_result(result):
+        if hasattr(result, "ok") and not result.ok:
+            try:
+                fail_body = result.json()
+            except Exception:
+                fail_body = getattr(result, "text", str(result))
+            return {
+                "fail": {
+                    "HTTPError": {
+                        "response": fail_body,
+                        "status_code": result.status_code,
+                    }
+                }
+            }
+        if hasattr(result, "json"):
+            try:
+                return {"pass": result.json()}
+            except Exception:
+                return {"pass": {"status_code": result.status_code}}
+        return {"pass": result}
+
+    def _invoke(self, entity_cls, init_params, resolved_args, _entity_id):
+        """Instantiate the entity and call the target method, returning a result dict."""
+        try:
+            init_param_names = set(init_params) - {"self"}
+            init_args = {k: v for k, v in resolved_args.items() if k in init_param_names}
+            method_args = {k: v for k, v in resolved_args.items() if k not in init_param_names}
+            entity_inst = entity_cls(**init_args)
+            if _entity_id and _entity_id not in (-1, "~") and self.method != "create":
+                entity_inst.id = _entity_id
+            result, fail_dict = self._call_with_id_retry(entity_inst, method_args)
+            if fail_dict is not None:
+                return fail_dict
+            return self._format_result(result)
+        except Exception as e:
+            handled = handle_exception(e)
+            logger.debug(f"fail: {handled}")
+            return {"fail": handled}
+
+    def execute(self, mock=False, _return_details=False, _entity_id=None):
         """Execute the task.
 
         :param mock: Return task dict without making real API calls.
         :param _return_details: If True, return {"result": ..., "resolved_args": ...} instead of
             the plain result dict. Used by the validation runner to capture actual values.
+        :param _entity_id: Pre-resolved entity ID to set on the instance before calling the method.
         :returns: Dict with 'pass', 'fail', or 'skipped' key (or details dict when
             _return_details).
         """
@@ -197,89 +303,32 @@ class EntityTestTask:
             result = attr.asdict(self)
             return {"result": result, "resolved_args": {}} if _return_details else result
 
-        imeths = EntityTester.pull_input_methods()
-
-        # Resolve arg_dict input method names to actual values
-        # Build field_info map from entity annotations for type-aware resolution
-        pulled_entities = EntityTester.pull_entities()
-        entity_cls = pulled_entities.get(self.entity)
-        if not entity_cls:
-            logger.error(f"Entity '{self.entity}' not found in apix module.")
-            return {"fail": f"Entity '{self.entity}' not found."}
-
-        method_obj = getattr(entity_cls, self.method, None)
-        if not method_obj:
-            logger.error(f"Method '{self.method}' not found on entity '{self.entity}'.")
-            return {"fail": f"Method '{self.method}' not found."}
+        entity_cls, method_obj, fail_dict = self._resolve_entity_and_method()
+        if fail_dict is not None:
+            return fail_dict
 
         field_info_map = _parse_annotations(method_obj)
+        init_params = inspect.signature(entity_cls.__init__).parameters
+        init_required = {
+            name
+            for name, p in init_params.items()
+            if name != "self" and p.default is inspect.Parameter.empty
+        }
 
-        resolved_args = {}
-        cut_list = []
-        for arg, inpt in self.arg_dict.items():
-            field_info = field_info_map.get(arg)
-            value = form_input(inpt, imeths, arg, self.config, field_info)
-            if value == "~":
-                cut_list.append(arg)
-            else:
-                resolved_args[arg] = value
-        for _ in cut_list:
-            pass  # skip unresolvable dependency args
+        resolved_args, dep_failures = self._resolve_args(field_info_map, init_required)
+
+        if dep_failures:
+            fail_msg = (
+                f"Dependency resolution failed for {self.entity}.{self.method}: "
+                f"could not resolve entity IDs for {dep_failures}"
+            )
+            result_dict = self._dependency_fail(fail_msg)
+            if _return_details:
+                return {"result": result_dict, "resolved_args": resolved_args}
+            return result_dict
 
         logger.debug(f"Executing: {self.entity}.{self.method}({resolved_args})")
-
-        try:
-            import inspect
-
-            init_param_names = set(inspect.signature(entity_cls.__init__).parameters) - {"self"}
-            init_args = {k: v for k, v in resolved_args.items() if k in init_param_names}
-            method_args = {k: v for k, v in resolved_args.items() if k not in init_param_names}
-            entity_inst = entity_cls(**init_args)
-            try:
-                result = getattr(entity_inst, self.method)(**method_args)
-            except (AttributeError, RuntimeError) as ae:
-                if "id" not in str(ae):
-                    raise
-                logger.debug(
-                    f"{self.entity}.{self.method} requires an entity ID; "
-                    f"attempting dependency resolution"
-                )
-                from rizza.helpers.inputs import get_entity_id
-
-                entity_id = get_entity_id(self.config, self.entity)
-                if entity_id and entity_id not in (-1, "~"):
-                    entity_inst.id = entity_id
-                    result = getattr(entity_inst, self.method)(**method_args)
-                else:
-                    logger.debug(
-                        f"Could not resolve ID for {self.entity} — "
-                        f"run 'rizza genetic -e {self.entity} -m create' first"
-                    )
-                    raise
-            if hasattr(result, "ok") and not result.ok:
-                try:
-                    fail_body = result.json()
-                except Exception:
-                    fail_body = getattr(result, "text", str(result))
-                result_dict = {
-                    "fail": {
-                        "HTTPError": {
-                            "response": fail_body,
-                            "status_code": result.status_code,
-                        }
-                    }
-                }
-            elif hasattr(result, "json"):
-                try:
-                    result_dict = {"pass": result.json()}
-                except Exception:
-                    result_dict = {"pass": {"status_code": result.status_code}}
-            else:
-                result_dict = {"pass": result}
-        except Exception as e:
-            handled = handle_exception(e)
-            logger.debug(f"fail: {handled}")
-            result_dict = {"fail": handled}
+        result_dict = self._invoke(entity_cls, init_params, resolved_args, _entity_id)
 
         if _return_details:
             return {"result": result_dict, "resolved_args": resolved_args}

@@ -40,7 +40,7 @@ dev = ["pre-commit", "pytest", "pytest-randomly", "ruff"]
 agentic = ["torch", "transformers"]
 
 [project.scripts]
-rizza = "rizza.__main__:cli"
+rizza = "rizza.__main__:main"
 
 [tool.setuptools]
 platforms = ["any"]
@@ -96,6 +96,7 @@ ignore = [
     "PT004",   # pytest underscrore prefix for non-return fixtures
     "PT005",   # pytest no underscrore prefix for return fixtures
     "RET503",  # missing explicit return
+    "RUF013",  # implict optional type annotations
 ]
 
 [tool.ruff.lint.isort]

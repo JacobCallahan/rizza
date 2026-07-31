@@ -184,11 +184,23 @@ class Config:
         return None
 
     def get_chunk(self, chunk=None):
-        """Return config value(s) for a dotted chunk path, or full config if None."""
+        """Return config value(s) for a dotted chunk path, or full config if None.
+
+        'rizza' is a pseudo top-level name for the main rizza.pconf file (which,
+        unlike 'genetics'/'connection', has no real nesting of its own) — a bare
+        'rizza' returns its non-imported keys, and 'rizza.<key>' is equivalent to
+        '<key>'.
+        """
         obj = self.rizza
         if chunk is None:
             return obj.to_dict() if hasattr(obj, "to_dict") else obj
-        for key in chunk.split("."):
+        keys = chunk.split(".")
+        if keys[0] == "rizza":
+            keys = keys[1:]
+            if not keys:
+                full = obj.to_dict() if hasattr(obj, "to_dict") else dict(obj)
+                return {k: v for k, v in full.items() if k not in IMPORTED_CHUNKS}
+        for key in keys:
             actual = self._resolve_attr_key(obj, key)
             if actual is None:
                 raise KeyError(f"Config key not found: {chunk!r}")
@@ -196,9 +208,17 @@ class Config:
         return obj.to_dict() if hasattr(obj, "to_dict") else obj
 
     def set_chunk(self, chunk, value):
-        """Set a config value by dotted chunk path and persist to the appropriate file."""
+        """Set a config value by dotted chunk path and persist to the appropriate file.
+
+        A leading 'rizza.' segment is stripped, since it names the main
+        rizza.pconf file rather than a real nested section (see get_chunk).
+        """
         coerced = yaml.safe_load(str(value))
         keys = chunk.split(".")
+        if keys[0] == "rizza":
+            keys = keys[1:]
+        if not keys:
+            raise KeyError(f"Config key not found: {chunk!r}")
         obj = self.rizza
         for key in keys[:-1]:
             actual = self._resolve_attr_key(obj, key)

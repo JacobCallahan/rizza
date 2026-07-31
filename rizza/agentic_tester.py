@@ -562,7 +562,8 @@ class AgenticPayloadLearner:
             return sorted(
                 name
                 for name in all_methods
-                if not name.startswith("genetic") and not name.startswith("_")
+                if (not name.startswith("genetic") or name == "genetic_index")
+                and not name.startswith("_")
             )
         except Exception:
             return sorted(
@@ -570,7 +571,7 @@ class AgenticPayloadLearner:
                     gen
                     for pool in self.type_pools.values()
                     for gen in pool
-                    if not gen.startswith("genetic")
+                    if not gen.startswith("genetic") or gen == "genetic_index"
                 )
             )
 
