@@ -4,7 +4,9 @@ import contextlib
 import datetime
 import json
 import logging
+import os
 from pathlib import Path
+import signal
 import sys
 
 from rich import print as rprint
@@ -1102,6 +1104,79 @@ def permutations_method(ctx, entity, method, version):
         store.close()
 
 
+_ILLION_UNITS = ["", "un", "duo", "tre", "quattuor", "quin", "sex", "septen", "octo", "novem"]
+_ILLION_TENS = [
+    "",
+    "deci",
+    "viginti",
+    "triginta",
+    "quadraginta",
+    "quinquaginta",
+    "sexaginta",
+    "septuaginta",
+    "octoginta",
+    "nonaginta",
+]
+_ILLION_HUNDREDS = [
+    "",
+    "centi",
+    "ducenti",
+    "trecenti",
+    "quadringenti",
+    "quingenti",
+    "sescenti",
+    "septingenti",
+    "octingenti",
+    "nongenti",
+]
+_ILLION_SPECIAL = {
+    1: "million",
+    2: "billion",
+    3: "trillion",
+    4: "quadrillion",
+    5: "quintillion",
+    6: "sextillion",
+    7: "septillion",
+    8: "octillion",
+    9: "nonillion",
+}
+
+
+def _illion_name(n):
+    """Return the short-scale name for 10**(3*n+3), e.g. 1 -> million, 100 -> centillion."""
+    if n in _ILLION_SPECIAL:
+        return _ILLION_SPECIAL[n]
+    hundreds, rem = divmod(n, 100)
+    tens, units = divmod(rem, 10)
+    prefix = _ILLION_UNITS[units] + _ILLION_TENS[tens] + _ILLION_HUNDREDS[hundreds]
+    if prefix and prefix[-1] in "aeiou":
+        prefix = prefix[:-1]
+    return f"{prefix}illion"
+
+
+def _format_permutation_count(n):
+    """Format a permutation count for display: exact with commas if small, else a scale name."""
+    n = int(n)
+    if n < 1_000_000:
+        return f"{n:,}"
+
+    digits = str(n)
+    digit_count = len(digits)
+    groups = (digit_count + 2) // 3
+    idx = groups - 2
+    lead_len = digit_count - 3 * (groups - 1)
+    lead = digits[:lead_len]
+    frac = digits[lead_len : lead_len + 2]
+
+    if idx > 100:
+        mantissa = f"{digits[0]}.{digits[1:3]}".rstrip("0").rstrip(".")
+        return f"{mantissa}e+{digit_count - 1}"
+
+    value = lead if frac.strip("0") == "" else f"{lead}.{frac}"
+    name = "thousand" if idx == 0 else _illion_name(idx)
+    return f"{value} {name}"
+
+
 def _render_method_summary(rows, coverage):
     """Render entity-level summary table aggregated across methods."""
     from collections import OrderedDict
@@ -1145,7 +1220,10 @@ def _render_method_summary(rows, coverage):
     console.print()
     console.print(table)
     tested, possible = coverage
-    console.print(f"  [dim]Tested {tested:,} / {possible:,} permutations[/dim]")
+    console.print(
+        f"  [dim]Tested {_format_permutation_count(tested)} / "
+        f"{_format_permutation_count(possible)} permutations[/dim]"
+    )
     console.print()
 
 
@@ -1186,7 +1264,10 @@ def _render_entity_detail(rows, entity_name, coverage):
     console.print()
     console.print(table)
     tested, possible = coverage
-    console.print(f"  [dim]Tested {tested:,} / {possible:,} permutations[/dim]")
+    console.print(
+        f"  [dim]Tested {_format_permutation_count(tested)} / "
+        f"{_format_permutation_count(possible)} permutations[/dim]"
+    )
     console.print()
 
 
@@ -1252,12 +1333,53 @@ def _render_method_tree(tree_data, method_name):
     console.print()
 
 
-if __name__ == "__main__":
+_interrupted = False
+
+
+def _note_sigint(signum, frame):
+    """Record that a SIGINT arrived, then fall through to the usual KeyboardInterrupt."""
+    global _interrupted
+    _interrupted = True
+    raise KeyboardInterrupt
+
+
+def _exit_after_interrupt():
+    """Terminate immediately after a Ctrl-C, skipping the normal shutdown sequence.
+
+    A long-running explore/validate can leave a non-daemon executor thread blocked
+    in a synchronous HTTP call with no way to cancel it. Waiting on the normal
+    interpreter shutdown to join that thread can hang, or force the user into
+    repeated Ctrl-C that crashes the process. Everything that matters (checkpoints,
+    telemetry) is already flushed via `finally` blocks by the time we get here, so
+    it's safe to skip the rest of the shutdown sequence and exit now.
+    """
+    console.print("\n[yellow]Interrupted by user — exiting.[/yellow]")
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(130)
+
+
+def main():
+    """Entry point for both `python -m rizza` and the installed `rizza` console script."""
+    signal.signal(signal.SIGINT, _note_sigint)
     try:
         cli(obj=None)
     except KeyboardInterrupt:
-        logger.warning("Rizza stopped by user.")
+        # In case a SIGINT lands outside the try/except that click itself wraps
+        # around command execution (e.g. during its shell-completion preamble).
+        _exit_after_interrupt()
+    except SystemExit:
+        # click (via rich_click) already turns KeyboardInterrupt into its own
+        # "Aborted!" message + sys.exit(1); catch that here so we can still
+        # short-circuit the shutdown sequence when _note_sigint flagged it.
+        if _interrupted:
+            _exit_after_interrupt()
+        raise
     except Exception as err:
         logger.exception(f"An unexpected error occurred: {err}")
         click.echo(f"Error: {err}", err=True)
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -56,6 +56,8 @@ def puppet_url(choice=1):
 
 __creating = __import__("contextvars").ContextVar("_creating", default=frozenset())
 __known_depth = __import__("contextvars").ContextVar("_known_depth", default=0)
+__active_creates_lock = __import__("threading").Lock()
+__active_creates: set[str] = set()
 
 
 def get_entity_id(config, entity="Organization"):
@@ -121,6 +123,29 @@ def genetic_known(config, entity="Organization"):
         __known_depth.reset(depth_token)
 
 
+def genetic_index(config, entity="Organization"):
+    """Return an ID of an existing entity by listing via _list_from_index().
+
+    Useful for built-in/pre-existing entities (AuthSource, Organization, Location)
+    that ship with the product and don't need to be created.
+    """
+    import logging
+
+    from rizza.entity_tester import EntityTester
+
+    try:
+        entity_cls = EntityTester.pull_entities().get(entity)
+        if not entity_cls:
+            return -1
+        inst = entity_cls()
+        results = inst._list_from_index()
+        if isinstance(results, list) and results:
+            return results[0].id
+    except Exception as err:
+        logging.getLogger(__name__).debug(f"genetic_index({entity}) failed: {err}")
+    return -1
+
+
 __recursion_lock = __import__("threading").Lock()
 
 
@@ -142,7 +167,7 @@ def genetic_unknown(config, entity="Organization", max_generations=None):
         )
         return None
 
-    # In replay mode (run_best/run_validation), don't explore — just replay
+    # In replay mode (run_best/run_validation), just replay — no concurrency guard needed.
     from rizza.genetic_tester import _replay_mode
 
     if _replay_mode.get():
@@ -171,7 +196,21 @@ def genetic_unknown(config, entity="Organization", max_generations=None):
     gtester = GeneticEntityTester(config, entity, "create", max_generations=max_generations)
     try:
         if not gtester._load_test():
-            gtester.run(save_only_passed=True)
+            with __active_creates_lock:
+                already_searching = entity in __active_creates
+                if not already_searching:
+                    __active_creates.add(entity)
+            if already_searching:
+                __logger.debug(
+                    f"Another thread is already searching for {entity}; "
+                    "will try run_best() with whatever is saved."
+                )
+            else:
+                try:
+                    gtester.run(save_only_passed=True)
+                finally:
+                    with __active_creates_lock:
+                        __active_creates.discard(entity)
         __logger.info("Resuming parent task.")
         return gtester.run_best()
     finally:

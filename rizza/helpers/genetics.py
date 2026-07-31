@@ -28,7 +28,7 @@ class Population:
             org.generate_genes(gen_func=self.generator_function, count=self.gene_length)
             self.population.append(org)
 
-    def _breed_pair(self, gene_list1, gene_list2):
+    def _breed_pair(self, gene_list1, gene_list2, required_genes=None):
         """Breed two gene lists using correlated crossover.
 
         For nested genes, a single crossover point is shared across all sublists to preserve
@@ -66,6 +66,18 @@ class Population:
                         if keep:
                             child.append(longer[min_len + j])
                     new_gene_list.append(child)
+
+            if required_genes and len(new_gene_list) >= 2:
+                present = set(new_gene_list[0])
+                for req in required_genes:
+                    if req not in present:
+                        for src in (gene_list1, gene_list2):
+                            if req in src[0]:
+                                idx = src[0].index(req)
+                                new_gene_list[0].append(req)
+                                new_gene_list[1].append(src[1][idx])
+                                break
+
             return new_gene_list
         if self.crossover_method == "uniform":
             return [
@@ -170,7 +182,9 @@ class Population:
         while len(next_generation) < self.population_count - immigration_count:
             parent1 = self._tournament_select(tournament_size)
             parent2 = self._tournament_select(tournament_size)
-            new_org = Organism(genes=self._breed_pair(parent1.genes, parent2.genes))
+            new_org = Organism(
+                genes=self._breed_pair(parent1.genes, parent2.genes, required_genes=required_genes)
+            )
             if self.mutate and random.random() <= mutation_chance:
                 new_org.mutate(
                     type_pools=type_pools,

@@ -84,6 +84,10 @@ def test_run_validation_records_telemetry(conf, tmp_path):
             return_value={"result": {"pass": {"id": 1}}, "resolved_args": {"name": "foo"}},
         ),
         patch(
+            "rizza.genetic_tester.GeneticEntityTester.run_best",
+            return_value=42,
+        ),
+        patch(
             "rizza.genetic_tester.PermutationStore.from_config",
             return_value=isolated_store,
         ),
@@ -101,6 +105,86 @@ def test_run_validation_records_telemetry(conf, tmp_path):
         assert row["total_fails"] == 0
     finally:
         store.close()
+
+
+def test_execute_dependency_failure_on_required_arg(conf):
+    """execute() should return DependencyError when a required genetic arg resolves to -1."""
+    from rizza.entity_tester import EntityTestTask
+
+    def fake_create(self, organization_id: int = None):
+        pass
+
+    FakeEntity = type(
+        "FakeEntity",
+        (),
+        {
+            "__init__": lambda self: None,
+            "create": fake_create,
+            "_api_methods": ["create"],
+        },
+    )
+
+    task = EntityTestTask(
+        entity="FakeEntity",
+        method="create",
+        arg_dict={"organization_id": "genetic_known"},
+        config=conf,
+    )
+    with (
+        patch(
+            "rizza.entity_tester.EntityTester.pull_entities",
+            return_value={"FakeEntity": FakeEntity, "Organization": MagicMock()},
+        ),
+        patch("rizza.helpers.inputs.genetic_known", return_value=-1),
+    ):
+        result = task.execute()
+
+    assert "fail" in result
+    assert "DependencyError" in result["fail"]
+
+
+def test_execute_drops_optional_unresolved_dep(conf):
+    """execute() should silently drop optional genetic args that resolve to -1."""
+    from rizza.entity_tester import EntityTestTask
+
+    def fake_index(self, organization_id: "int | None" = None):
+        pass
+
+    FakeEntity = type(
+        "FakeEntity",
+        (),
+        {
+            "__init__": lambda self: None,
+            "index": fake_index,
+            "_api_methods": ["index"],
+        },
+    )
+
+    call_args = {}
+
+    def capture_index(self, **kwargs):
+        call_args.update(kwargs)
+        return {"status": "ok"}
+
+    FakeEntity.index = capture_index
+
+    task = EntityTestTask(
+        entity="FakeEntity",
+        method="index",
+        arg_dict={"organization_id": "genetic_known"},
+        config=conf,
+    )
+    with (
+        patch(
+            "rizza.entity_tester.EntityTester.pull_entities",
+            return_value={"FakeEntity": FakeEntity, "Organization": MagicMock()},
+        ),
+        patch("rizza.helpers.inputs.genetic_known", return_value=-1),
+    ):
+        result = task.execute()
+
+    assert "pass" in result
+    assert "organization_id" not in call_args
 
 
 def _make_fake_entity(has_annotation=False):

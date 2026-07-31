@@ -59,7 +59,9 @@ def _entity_from_param_name(param_name, known_entity_names_lower):
         base = name[:-3]
     else:
         return None
-    return known_entity_names_lower.get(base)
+    return known_entity_names_lower.get(base) or known_entity_names_lower.get(
+        base.replace("_", "")
+    )
 
 
 def run_all_entities(**kwargs):
@@ -516,7 +518,7 @@ class GeneticEntityTester:
         for param in params:
             pool = self._type_pools.get(param, all_inputs)
             if param in self._required_params:
-                pool = [g for g in pool if not g.startswith("genetic_")]
+                pool = [g for g in pool if not g.startswith("genetic_") or g == "genetic_index"]
                 if not pool:
                     pool = all_inputs
             if poison_pairs:
@@ -593,7 +595,7 @@ class GeneticEntityTester:
         """Load poison pairs from telemetry; returns (poison_pairs, gene_gen)."""
         genetics_cfg = self.config.rizza.genetics
         poison_pairs = None
-        if not mock and getattr(genetics_cfg, "vet_organisms", True):
+        if not mock and not self.fresh and getattr(genetics_cfg, "vet_organisms", True):
             try:
                 store = PermutationStore.from_config(self.config)
                 method_name = f"{self.entity}.{self.method}"
@@ -683,7 +685,7 @@ class GeneticEntityTester:
         _fitness_cache = {}
         vet_fn = None
         self._init_telemetry(mock)
-        if not mock and getattr(genetics_cfg, "vet_organisms", True):
+        if not mock and not self.fresh and getattr(genetics_cfg, "vet_organisms", True):
             vet_fn = self._build_vet_fn(f"{self.entity}.{self.method}")
         try:
             for generation in range(self.max_generations):
@@ -830,16 +832,17 @@ class GeneticEntityTester:
             if not test:
                 return None
 
+            entity_id = None
             if self.method != "create":
                 try:
                     create_tester = GeneticEntityTester(self.config, self.entity, "create")
-                    create_tester.run_best()
+                    entity_id = create_tester.run_best()
                 except Exception:
                     pass
 
             task = self._genes_to_task(test)
             try:
-                details = task.execute(_return_details=True)
+                details = task.execute(_return_details=True, _entity_id=entity_id)
             except RecursionError:
                 logger.warning(f"RecursionError in run_validation for {self.entity}; skipping.")
                 return None
@@ -880,8 +883,9 @@ class AsyncGeneticEntityTester(GeneticEntityTester):
     async def _run_org(self, organism, mock=False):
         async with self.max_running:
             task = self._genes_to_task(organism.genes)
+            ctx = contextvars.copy_context()
             try:
-                result = await self.loop.run_in_executor(None, task.execute, mock)
+                result = await self.loop.run_in_executor(None, ctx.run, task.execute, mock)
             except RecursionError:
                 logger.warning(f"RecursionError testing {organism}; removing from population.")
                 await self._results.put((None, organism))
@@ -922,7 +926,7 @@ class AsyncGeneticEntityTester(GeneticEntityTester):
         _fitness_cache = {}
         vet_fn = None
         self._init_telemetry(mock)
-        if not mock and getattr(genetics_cfg, "vet_organisms", True):
+        if not mock and not self.fresh and getattr(genetics_cfg, "vet_organisms", True):
             vet_fn = self._build_vet_fn(f"{self.entity}.{self.method}")
         try:
             for generation in range(self.max_generations):

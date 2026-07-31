@@ -183,6 +183,10 @@ def field_to_entity(field, field_info=None):
     field = "".join([x.capitalize() for x in field.split("_")])
     if field in entity_list:
         return field
+    if field.endswith("Ids") and field[:-3] in entity_list:
+        return field[:-3]
+    if field.endswith("Id") and field[:-2] in entity_list:
+        return field[:-2]
 
 
 def get_default_type(func):
